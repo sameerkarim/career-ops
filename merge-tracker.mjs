@@ -67,6 +67,16 @@ function normalizeCompany(name) {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+// Sanitize fields before writing to markdown table (prevent injection)
+function sanitizeField(value) {
+  return String(value)
+    .replace(/\|/g, '\\|')     // Escape pipe (table delimiter)
+    .replace(/\n/g, ' ')       // Collapse newlines
+    .replace(/\r/g, '')        // Strip carriage returns
+    .replace(/\t/g, ' ')       // Strip tabs
+    .trim();
+}
+
 function roleFuzzyMatch(a, b) {
   const wordsA = a.toLowerCase().split(/\s+/).filter(w => w.length > 3);
   const wordsB = b.toLowerCase().split(/\s+/).filter(w => w.length > 3);
@@ -230,7 +240,9 @@ let skipped = 0;
 const newLines = [];
 
 for (const file of tsvFiles) {
-  const content = readFileSync(join(ADDITIONS_DIR, file), 'utf-8').trim();
+  // Use basename to prevent path traversal via crafted filenames
+  const safeFile = basename(file);
+  const content = readFileSync(join(ADDITIONS_DIR, safeFile), 'utf-8').trim();
   const addition = parseTsvContent(content, file);
   if (!addition) { skipped++; continue; }
 
@@ -270,7 +282,7 @@ for (const file of tsvFiles) {
       console.log(`🔄 Update: #${duplicate.num} ${addition.company} — ${addition.role} (${oldScore}→${newScore})`);
       const lineIdx = appLines.indexOf(duplicate.raw);
       if (lineIdx >= 0) {
-        const updatedLine = `| ${duplicate.num} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${duplicate.status} | ${duplicate.pdf} | ${addition.report} | Re-eval ${addition.date} (${oldScore}→${newScore}). ${addition.notes} |`;
+        const updatedLine = `| ${duplicate.num} | ${sanitizeField(addition.date)} | ${sanitizeField(addition.company)} | ${sanitizeField(addition.role)} | ${sanitizeField(addition.score)} | ${sanitizeField(duplicate.status)} | ${sanitizeField(duplicate.pdf)} | ${sanitizeField(addition.report)} | Re-eval ${sanitizeField(addition.date)} (${oldScore}→${newScore}). ${sanitizeField(addition.notes)} |`;
         appLines[lineIdx] = updatedLine;
         updated++;
       }
@@ -283,7 +295,7 @@ for (const file of tsvFiles) {
     const entryNum = addition.num > maxNum ? addition.num : ++maxNum;
     if (addition.num > maxNum) maxNum = addition.num;
 
-    const newLine = `| ${entryNum} | ${addition.date} | ${addition.company} | ${addition.role} | ${addition.score} | ${addition.status} | ${addition.pdf} | ${addition.report} | ${addition.notes} |`;
+    const newLine = `| ${entryNum} | ${sanitizeField(addition.date)} | ${sanitizeField(addition.company)} | ${sanitizeField(addition.role)} | ${sanitizeField(addition.score)} | ${sanitizeField(addition.status)} | ${sanitizeField(addition.pdf)} | ${sanitizeField(addition.report)} | ${sanitizeField(addition.notes)} |`;
     newLines.push(newLine);
     added++;
     console.log(`➕ Add #${entryNum}: ${addition.company} — ${addition.role} (${addition.score})`);
@@ -312,7 +324,8 @@ if (!DRY_RUN) {
   // Move processed files to merged/
   if (!existsSync(MERGED_DIR)) mkdirSync(MERGED_DIR, { recursive: true });
   for (const file of tsvFiles) {
-    renameSync(join(ADDITIONS_DIR, file), join(MERGED_DIR, file));
+    const safe = basename(file);
+    renameSync(join(ADDITIONS_DIR, safe), join(MERGED_DIR, safe));
   }
   console.log(`\n✅ Moved ${tsvFiles.length} TSVs to merged/`);
 }

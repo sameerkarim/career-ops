@@ -29,12 +29,40 @@ const APPLICATIONS_PATH = 'data/applications.md';
 const CONCURRENCY = 10;
 const FETCH_TIMEOUT_MS = 10_000;
 
+// ── URL validation ──────────────────────────────────────────────────
+
+const ALLOWED_API_HOSTS = [
+  'boards-api.greenhouse.io',
+  'job-boards.greenhouse.io',
+  'job-boards.eu.greenhouse.io',
+  'api.ashbyhq.com',
+  'api.lever.co',
+];
+
+function validateApiUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (!['https:', 'http:'].includes(parsed.protocol)) return null;
+    const hostname = parsed.hostname;
+    // Block private ranges, localhost, and file:// schemes
+    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.0\.0\.0|\[::1\])/.test(hostname)) return null;
+    // Allowlist known ATS API domains
+    if (!ALLOWED_API_HOSTS.some(d => hostname === d || hostname.endsWith('.' + d))) return null;
+    return url;
+  } catch { return null; }
+}
+
 // ── API detection ───────────────────────────────────────────────────
 
 function detectApi(company) {
   // Greenhouse: explicit api field
   if (company.api && company.api.includes('greenhouse')) {
-    return { type: 'greenhouse', url: company.api };
+    const validated = validateApiUrl(company.api);
+    if (!validated) {
+      console.warn(`⚠️  Blocked non-allowlisted API URL for ${company.name}: ${company.api}`);
+      return null;
+    }
+    return { type: 'greenhouse', url: validated };
   }
 
   const url = company.careers_url || '';
@@ -310,7 +338,10 @@ async function main() {
         // Mark as seen to avoid intra-scan dupes
         seenUrls.add(job.url);
         seenCompanyRoles.add(key);
-        newOffers.push({ ...job, source: `${type}-api` });
+        // Sanitize external data before storing
+        const safeTitle = job.title.replace(/[\t\n\r|]/g, ' ').slice(0, 200);
+        const safeCompany = job.company.replace(/[\t\n\r|]/g, ' ').slice(0, 100);
+        newOffers.push({ ...job, title: safeTitle, company: safeCompany, source: `${type}-api` });
       }
     } catch (err) {
       errors.push({ company: company.name, error: err.message });

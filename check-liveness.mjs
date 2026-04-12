@@ -86,6 +86,24 @@ async function main() {
     urls = args;
   }
 
+  // Validate all URLs: only allow http/https protocols
+  for (const url of urls) {
+    try {
+      const parsed = new URL(url);
+      if (!['https:', 'http:'].includes(parsed.protocol)) {
+        console.error(`ERROR: Blocked non-HTTP URL: ${url} (protocol: ${parsed.protocol})`);
+        process.exit(1);
+      }
+      if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(parsed.hostname)) {
+        console.error(`ERROR: Blocked private/localhost URL: ${url}`);
+        process.exit(1);
+      }
+    } catch {
+      console.error(`ERROR: Invalid URL: ${url}`);
+      process.exit(1);
+    }
+  }
+
   console.log(`Checking ${urls.length} URL(s)...\n`);
 
   const browser = await chromium.launch({ headless: true });

@@ -68,15 +68,44 @@ USAGE
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --parallel) PARALLEL="$2"; shift 2 ;;
+    --parallel)
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "ERROR: --parallel requires a positive integer"; exit 1; }
+      PARALLEL="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     --retry-failed) RETRY_FAILED=true; shift ;;
-    --start-from) START_FROM="$2"; shift 2 ;;
-    --max-retries) MAX_RETRIES="$2"; shift 2 ;;
+    --start-from)
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "ERROR: --start-from requires a positive integer"; exit 1; }
+      START_FROM="$2"; shift 2 ;;
+    --max-retries)
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "ERROR: --max-retries requires a positive integer"; exit 1; }
+      MAX_RETRIES="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1"; usage; exit 1 ;;
   esac
 done
+
+# Validate URL is safe (https only, no private ranges)
+validate_url() {
+  local url="$1"
+  # Must be https:// or http://
+  if [[ ! "$url" =~ ^https?:// ]]; then
+    echo "ERROR: URL must start with http:// or https://: $url"
+    return 1
+  fi
+  # Block file://, javascript:, data: schemes
+  if [[ "$url" =~ ^(file|javascript|data|ftp): ]]; then
+    echo "ERROR: Blocked URL scheme: $url"
+    return 1
+  fi
+  # Block localhost and private IP ranges
+  local host
+  host=$(echo "$url" | sed -nE 's|^https?://([^/:]+).*|\1|p')
+  if [[ "$host" =~ ^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.|0\.0\.0\.0|\[::1\]) ]]; then
+    echo "ERROR: Blocked private/localhost URL: $url"
+    return 1
+  fi
+  return 0
+}
 
 # Lock file to prevent double execution
 acquire_lock() {
@@ -313,14 +342,17 @@ process_offer() {
   report_num=$(reserve_report_num "$id" "$url" "$started_at" "$retries")
   local date
   date=$(date +%Y-%m-%d)
-  local jd_file="/tmp/batch-jd-${id}.txt"
+  local jd_file
+  jd_file=$(mktemp "/tmp/batch-jd-${id}-XXXXXXXX.txt")
+  chmod 600 "$jd_file"
 
   echo "--- Processing offer #$id: $url (report $report_num, attempt $((retries + 1)))"
 
   # Build the prompt with placeholders replaced
+  # Wrap URL in XML delimiters so the model treats it as data, not instructions
   local prompt
   prompt="Procesa esta oferta de empleo. Ejecuta el pipeline completo: evaluación A-F + report .md + PDF + tracker line."
-  prompt="$prompt URL: $url"
+  prompt="$prompt <url>$url</url>"
   prompt="$prompt JD file: $jd_file"
   prompt="$prompt Report number: $report_num"
   prompt="$prompt Date: $date"
@@ -329,16 +361,31 @@ process_offer() {
   local log_file="$LOGS_DIR/${report_num}-${id}.log"
 
   # Prepare system prompt with placeholders resolved
-  local resolved_prompt="$BATCH_DIR/.resolved-prompt-${id}.md"
-  # Escape sed delimiter characters in variables to prevent substitution breakage
+  # Use mktemp for the resolved prompt (not predictable path)
+  local resolved_prompt
+  resolved_prompt=$(mktemp "$BATCH_DIR/.resolved-prompt-${id}-XXXXXX.md")
+  chmod 600 "$resolved_prompt"
+  # Add cleanup trap for this function
+  trap 'rm -f "$resolved_prompt" "$jd_file"' RETURN
+
+  # Escape all sed-special characters in variables to prevent substitution breakage
+  # sed replacement specials: \ & | and newlines
+  escape_for_sed() {
+    local val="$1"
+    val="${val//\\/\\\\}"   # backslash
+    val="${val//&/\\&}"     # ampersand (sed replacement special)
+    val="${val//|/\\|}"     # pipe (our delimiter)
+    val="${val//$'\n'/}"    # strip newlines
+    val="${val//$'\r'/}"    # strip carriage returns
+    printf '%s' "$val"
+  }
+
   local esc_url esc_jd_file esc_report_num esc_date esc_id
-  esc_url="${url//\\/\\\\}"
-  esc_url="${esc_url//|/\\|}"
-  esc_jd_file="${jd_file//\\/\\\\}"
-  esc_jd_file="${esc_jd_file//|/\\|}"
-  esc_report_num="${report_num//|/\\|}"
-  esc_date="${date//|/\\|}"
-  esc_id="${id//|/\\|}"
+  esc_url=$(escape_for_sed "$url")
+  esc_jd_file=$(escape_for_sed "$jd_file")
+  esc_report_num=$(escape_for_sed "$report_num")
+  esc_date=$(escape_for_sed "$date")
+  esc_id=$(escape_for_sed "$id")
   sed \
     -e "s|{{URL}}|${esc_url}|g" \
     -e "s|{{JD_FILE}}|${esc_jd_file}|g" \
@@ -348,15 +395,15 @@ process_offer() {
     "$PROMPT_FILE" > "$resolved_prompt"
 
   # Launch claude -p worker (uses default model from Claude Max subscription)
+  # Security: use allowlisted tools instead of --dangerously-skip-permissions
+  # Workers only need: Read (cv.md, JD), Write (reports, tracker TSV, HTML),
+  # WebFetch (JD extraction), WebSearch (comp research), Bash (generate-pdf.mjs only)
   local exit_code=0
   claude -p \
-    --dangerously-skip-permissions \
+    --allowedTools 'Read,Write,Edit,WebFetch,WebSearch,Bash(node generate-pdf.mjs*)' \
     --append-system-prompt-file "$resolved_prompt" \
     "$prompt" \
     > "$log_file" 2>&1 || exit_code=$?
-
-  # Cleanup resolved prompt
-  rm -f "$resolved_prompt"
 
   local completed_at
   completed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -375,7 +422,7 @@ process_offer() {
   else
     retries=$((retries + 1))
     local error_msg
-    error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
+    error_msg=$(tail -5 "$log_file" 2>/dev/null | tr '\n\t' '  ' | cut -c1-200 || echo "Unknown error (exit code $exit_code)")
     update_state "$id" "$url" "failed" "$started_at" "$completed_at" "$report_num" "-" "$error_msg" "$retries"
     echo "    ❌ Failed (attempt $retries, exit code $exit_code)"
   fi
@@ -465,6 +512,12 @@ main() {
 
     # Guard against non-numeric id values
     [[ "$id" =~ ^[0-9]+$ ]] || continue
+
+    # Validate URL format and block dangerous schemes/hosts
+    if ! validate_url "$url"; then
+      echo "SKIP #$id: invalid or blocked URL"
+      continue
+    fi
 
     # Skip if before start-from
     if (( id < START_FROM )); then

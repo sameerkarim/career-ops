@@ -142,6 +142,11 @@ async function check() {
     const res = await fetch(RAW_VERSION_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     remote = (await res.text()).trim();
+    // Validate version string format to prevent injection
+    if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(remote)) {
+      console.log(JSON.stringify({ status: 'error', message: `Invalid remote version format: ${remote}` }));
+      return;
+    }
   } catch {
     console.log(JSON.stringify({ status: 'offline', local }));
     return;
@@ -204,8 +209,22 @@ async function apply() {
     console.log('Fetching latest from upstream...');
     git('fetch', CANONICAL_REPO, 'main');
 
-    // 3. Checkout system files only
-    console.log('Updating system files...');
+    // 3. Show diff preview before applying
+    console.log('\n--- Changes preview ---');
+    let diffOutput = '';
+    try {
+      diffOutput = git('diff', 'HEAD', 'FETCH_HEAD', '--stat', '--', ...SYSTEM_PATHS);
+      if (diffOutput) {
+        console.log(diffOutput);
+      } else {
+        console.log('(no changes detected)');
+      }
+    } catch {
+      console.log('(could not generate diff preview)');
+    }
+
+    // 4. Checkout system files only
+    console.log('\nUpdating system files...');
     const updated = [];
     for (const path of SYSTEM_PATHS) {
       try {
@@ -216,7 +235,7 @@ async function apply() {
       }
     }
 
-    // 4. Validate: check NO user files were touched
+    // 5. Validate: check NO user files were touched
     let userFileTouched = false;
     try {
       for (const entry of gitStatusEntries()) {
@@ -239,14 +258,14 @@ async function apply() {
       process.exit(1);
     }
 
-    // 5. Install any new dependencies
+    // 6. Install any new dependencies (--ignore-scripts prevents postinstall code execution)
     try {
-      execSync('npm install --silent', { cwd: ROOT, timeout: 60000 });
+      execFileSync('npm', ['install', '--silent', '--ignore-scripts'], { cwd: ROOT, timeout: 60000 });
     } catch {
-      console.log('npm install skipped (may need manual run)');
+      console.log('npm install skipped (may need manual run: npm install)');
     }
 
-    // 6. Commit the update
+    // 7. Commit the update
     const remote = localVersion(); // Re-read after checkout updated VERSION
     try {
       const pathsToStage = [...updated];

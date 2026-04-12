@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -104,18 +105,24 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case screens.PipelineOpenURLMsg:
-		url := msg.URL
+		openURL := msg.URL
+		// Validate URL: only allow http/https schemes to prevent arbitrary command execution
+		parsedURL, err := url.Parse(openURL)
+		if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+			fmt.Fprintf(os.Stderr, "WARN: blocked non-HTTP URL: %s\n", openURL)
+			return m, nil
+		}
 		return m, func() tea.Msg {
 			var cmd *exec.Cmd
 			switch runtime.GOOS {
 			case "darwin":
-				cmd = exec.Command("open", url)
+				cmd = exec.Command("open", openURL)
 			case "linux":
-				cmd = exec.Command("xdg-open", url)
+				cmd = exec.Command("xdg-open", openURL)
 			case "windows":
-				cmd = exec.Command("cmd", "/c", "start", "", url)
+				cmd = exec.Command("cmd", "/c", "start", "", openURL)
 			default:
-				cmd = exec.Command("xdg-open", url)
+				cmd = exec.Command("xdg-open", openURL)
 			}
 			_ = cmd.Run()
 			return nil

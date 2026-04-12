@@ -94,6 +94,20 @@ async function generatePDF() {
   inputPath = resolve(inputPath);
   outputPath = resolve(outputPath);
 
+  // Validate paths are within expected directories (prevent path traversal)
+  const projectRoot = resolve(__dirname);
+  const allowedInputDirs = ['/tmp', resolve(projectRoot, 'output'), projectRoot];
+  const allowedOutputDirs = [resolve(projectRoot, 'output'), '/tmp'];
+
+  if (!allowedInputDirs.some(d => inputPath.startsWith(d + '/'))) {
+    console.error(`❌ Input path must be within project root or /tmp: ${inputPath}`);
+    process.exit(1);
+  }
+  if (!allowedOutputDirs.some(d => outputPath.startsWith(d + '/'))) {
+    console.error(`❌ Output path must be within output/ or /tmp: ${outputPath}`);
+    process.exit(1);
+  }
+
   // Validate format
   const validFormats = ['a4', 'letter'];
   if (!validFormats.includes(format)) {
@@ -134,8 +148,9 @@ async function generatePDF() {
     const page = await browser.newPage();
 
     // Set content with file base URL for any relative resources
+    // Use domcontentloaded instead of networkidle to prevent external resource loading (SSRF risk)
     await page.setContent(html, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       baseURL: `file://${dirname(inputPath)}/`,
     });
 
