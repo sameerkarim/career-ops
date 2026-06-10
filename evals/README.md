@@ -24,6 +24,8 @@ longitudinal data on which models are best for which tasks.
 ```
 evals/
 ├── README.md                  ← this plan
+├── CLAUDE.md                  ← agent instructions for working in this directory
+├── GETTING-STARTED.md         ← human walkthrough: run your first wave
 ├── categories.yml             ← category registry (single source of truth; add use cases here)
 ├── taxonomy.md                ← narrative companion: 13 categories (A–M) + how to add more
 ├── schema/
