@@ -5,8 +5,8 @@ task category (weights in `weights.yml`; weight 0 = not scored). Anchors below a
 normative: judges (LLM and human) must cite which anchor the response matches and
 quote evidence before assigning the score.
 
-**Version: 1.0** — bump on any anchor change; never rescore a closed wave with a new
-version.
+**Version: 1.1** — bump on any anchor change; never rescore a closed wave with a new
+version. (1.1 adds the artifact dimensions `robustness` and `visual_design`.)
 
 ---
 
@@ -107,6 +107,38 @@ version.
 | 3 | Core delivered; a secondary requirement dropped or format ignored. |
 | 2 | Material part of the brief missing or replaced with something not asked for. |
 | 1 | Output does not address the brief. |
+
+---
+
+## Artifact dimensions (categories K, L, M — **human-primary**, see protocol)
+
+Judge scores on these two dimensions are *provisional* until validated against human
+review for two consecutive waves (ρ ≥ 0.7); until then the human score is the score.
+
+### 10. `robustness` — Artifact engineering quality (models & plans)
+
+For **financial models** (K): would this survive the partner changing an assumption
+at 11pm? For **project plans** (M): would this survive one task slipping a week?
+
+| Score | Anchor |
+|---|---|
+| 5 | Models: inputs / calculation logic / outputs cleanly separated; every driver is a named, single-point-of-change assumption; no magic numbers inside formulas; scenario/sensitivity built in; a stranger could audit and re-run it in minutes. Plans: dependencies and critical path explicit; long-lead items front-loaded; buffers and decision gates present; resourcing reconciled against stated constraints. |
+| 4 | Sound architecture with minor lapses — one hardcoded value, one missing sensitivity; plan has dependencies but thin buffers or one unsequenced long-lead item. |
+| 3 | Works for the base case only: changing an assumption means hand-editing formulas; critical path implied but never stated; resourcing asserted, not reconciled. |
+| 2 | Inputs and calculations conflated; hardcoded chains; plan is a dated task list with no dependency logic. |
+| 1 | Broken logic, circular references, internally inconsistent dates/resources, or outputs not derivable from the stated inputs. |
+
+### 11. `visual_design` — Information & visual design (presentations)
+
+Scored from the **rendered artifact** (slide images), not the markup.
+
+| Score | Anchor |
+|---|---|
+| 5 | Every slide title is an assertion (the "so what", not a label); one message per slide with one supporting exhibit; chart types match the data and the message; visual hierarchy guides the eye to the point; consistent, restrained, board-appropriate design. Reading titles alone gives the full storyline. |
+| 4 | Assertion titles and sensible exhibits throughout; minor clutter, inconsistency, or one chart that works but isn't the best choice. |
+| 3 | Descriptive titles ("Revenue overview"); readable but generic; data shown in tables where a chart would carry the message, or vice versa. |
+| 2 | Walls of text or numbers; decoration over information; misleading axes/scales; hierarchy absent. |
+| 1 | Unreadable or broken layout, or exhibits that contradict the data/storyline. |
 
 ---
 

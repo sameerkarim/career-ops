@@ -26,7 +26,30 @@ zero human eyes in any category.
 - Any gate triggered (integrity/completion caps)
 - Judge composite in the top or bottom decile of the wave (extremes drive headlines)
 - Pairwise position-swap disagreements on decision-relevant pairs
-- Objective-key vs. rubric-score divergence (category C and I canaries)
+- Objective-key vs. rubric-score divergence (category C, I, and K canaries)
+- Any response scored on a **human-primary dimension** (see below)
+
+## Human-primary dimensions (artifact categories K, L, M)
+
+`robustness` and `visual_design` (listed in `rubrics/weights.yml →
+human_primary_dimensions`) are judgments LLMs have not yet earned our trust on:
+model architecture and visual/information design are exactly where fluent-but-wrong
+is most likely. Rules:
+
+1. **100% human review** for every response in categories K, L, M (the runner flags
+   them automatically) — the 20% sampling rate does not apply.
+2. The judge still scores these dimensions every time (we need the paired data),
+   but the **human score is the score**; the scorecard marks judge values on these
+   dimensions as *provisional*.
+3. **Graduation:** a human-primary dimension is promoted to normal judge-scored
+   status after judge–human Spearman ≥ 0.7 **and** within-1 ≥ 90% on that dimension
+   for **two consecutive waves** with n ≥ 10 each. Demote again if either bar is
+   missed in any later wave.
+4. For `visual_design`, humans review the **rendered slides** (same images the
+   vision judge saw, stored in `results/<wave>/artifacts/`), never the raw HTML.
+5. For `robustness` on models (K), the reviewer spot-rebuilds at least the EBITDA
+   line from the spec: if the spec can't be implemented as written, robustness ≤ 2
+   regardless of how clean it looks.
 
 ## Blinding
 

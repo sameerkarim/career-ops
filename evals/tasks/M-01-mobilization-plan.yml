@@ -1,0 +1,67 @@
+id: M-01
+version: "1.0"
+title: lending-launch-mobilization-plan
+category: M
+mode: single_turn
+difficulty: standard
+est_minutes_human: 60
+deliverable_type: text
+
+prompt: |
+  Crestline Bank took the recommendation to enter SMB lending via a
+  lending-as-a-service partner (see context). The executive committee approved
+  mobilization and wants the 16-week plan to reach "first loan issued". You are the
+  engagement manager; build the plan the integration steering committee will run.
+
+  Known constraints:
+  - Vendor RFP process requires a minimum of 4 weeks from issue to vendor selection
+    (procurement policy); contracting after selection typically takes 2–3 weeks.
+  - Technical integration with the chosen vendor is quoted at 8 weeks and cannot
+    meaningfully start before contract signature.
+  - The integration engineers sit in the core-banking team and are frozen on a
+    regulatory release until the end of week 6; two product FTEs are available from
+    week 1.
+  - The regulator expects pre-engagement on the new credit activity; getting a
+    meeting takes ~6 weeks from request, and the bank wants the meeting held before
+    any public launch.
+  - The new credit policy must be approved by the board credit committee, which
+    meets monthly (next meetings: weeks 4, 8, 12, 16).
+  - Marketing wants a pilot with 25 existing SMB deposit customers before broad
+    launch.
+
+  Deliverable: the mobilization plan — phases/workstreams with weeks, explicit
+  dependencies, the critical path called out, decision gates, owners per
+  workstream (role-level), top 5 risks with mitigations and owners, and the
+  governance cadence. Flag any constraint conflicts you find rather than papering
+  over them.
+
+constraints:
+  max_words: 900
+  format: structured plan (workstreams × weeks; tables welcome)
+
+key:
+  required_points:
+    - point: "Critical path identified explicitly and correctly: RFP (w1–4/5) → selection + contracting (~w5–7) → 8-week integration (~w8–15) → pilot/first loan (~w16); plan acknowledges this leaves essentially zero buffer and says what creates slack (e.g., pre-staging integration scoping during contracting, parallel sandbox access)"
+      dimension: robustness
+    - point: "Long-lead items front-loaded in week 1: regulator meeting request (6-week lead) and credit-policy drafting timed so approval lands at the week-8 credit-committee meeting (week-4 is unrealistically early for a final policy; missing week 8 pushes to week 12 and threatens launch)"
+      dimension: robustness
+    - point: "Resource constraint handled, not ignored: integration engineers unavailable until end of week 6 — plan shows this is absorbable because integration starts ~week 8, but flags the collision risk if contracting accelerates or the regulatory release slips"
+      dimension: rigor
+    - point: "Decision gates with owners (vendor selection, contract signature, credit-policy approval, go/no-go for pilot) and a steering cadence (weekly working, bi-weekly/monthly steering)"
+      dimension: actionability
+    - point: "Risks are plan-specific with named mitigations and owners (vendor slippage, credit-committee miss, regulator feedback forcing rework, engineer availability), not generic ('resourcing risk — monitor')"
+      dimension: actionability
+  common_failures:
+    - failure: "A dated task list with no dependency logic — weeks assigned but nothing explains what blocks what"
+      dimension: robustness
+    - failure: "Schedules credit-policy approval or regulator meeting without reconciling against the stated calendars/lead times"
+      dimension: rigor
+    - failure: "Ignores that the 16-week target has no buffer — presents the plan as comfortable instead of flagging the tension and proposing de-risking"
+      dimension: integrity
+  judge_notes: |
+    Verify the arithmetic of the schedule against every stated constraint: a plan
+    that has integration starting before contract signature, or policy approval at
+    a week with no committee meeting, caps rigor at 2. The best answers surface the
+    zero-buffer problem unprompted and either propose acceleration levers or
+    recommend a realistic week-17/18 contingency to the exec committee.
+    `robustness` is human-primary: always flag for human review.

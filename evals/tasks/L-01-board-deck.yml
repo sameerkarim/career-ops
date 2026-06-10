@@ -1,0 +1,73 @@
+id: L-01
+version: "1.0"
+title: board-deck-from-findings
+category: L
+mode: single_turn
+difficulty: hard
+est_minutes_human: 90
+deliverable_type: html
+
+prompt: |
+  Same engagement as the Northgate board memo: the board accepted the memo and now
+  wants the findings presented at Thursday's meeting. Build the 5-slide deck (max 6
+  including a title slide) the partner will present. The board question on the
+  agenda remains: "Should we keep funding the current growth plan, or pivot to
+  profitability?"
+
+  Deliver the deck as ONE self-contained HTML file:
+  - One <section class="slide"> per slide, sized 1280×720, all CSS inline or in a
+    single <style> block, no external assets or scripts.
+  - Charts must be real visuals (inline SVG or styled HTML/CSS bars) — not pasted
+    tables of numbers, and not images you cannot generate.
+  - Slide titles must carry the storyline (assertion titles).
+  - The deck must work printed in grayscale (don't encode meaning in color alone).
+
+  Output only the HTML file in a single fenced ```html code block.
+
+inputs: |
+  FINDINGS (same fact base the board memo used):
+
+  Growth: new-logo ARR €9.2M last 12m vs €14M target; pipeline coverage 2.1x
+  (healthy ≥3x); win rate vs main competitor down 38%→29% in deals >€100k; two
+  healthcare-vertical enterprise wins, €1.8M combined, 11-month sales cycle; CAC
+  payback 31 months (was 24 two years ago).
+
+  Retention: logo churn 12%/yr, concentrated in <€30k accounts (70% of churned
+  logos); net revenue retention 103%; NPS 41 with named CSM vs 12 without.
+
+  Cost: S&M €21M/yr (35% of ARR €60M); R&D €15M; G&A €8M; EBITDA margin −9%;
+  runway 19 months at current burn; 60% of engineering roadmap capacity consumed
+  by custom commitments from enterprise deals.
+
+constraints:
+  format: single self-contained HTML file, ≤6 slides of 1280×720
+
+key:
+  required_points:
+    - point: "Assertion titles that carry the storyline end-to-end — reading titles alone yields the argument and the recommendation; the recommendation appears by slide 2, not only at the end"
+      dimension: visual_design
+    - point: "One message per slide with one supporting exhibit; chart types fit the data (e.g., paired/trend bars for payback 24→31 months and win rate 38%→29%; a burn/runway visual for the 19-month runway)"
+      dimension: visual_design
+    - point: "Runway (19 months) is visually prominent, not a footnote"
+      dimension: communication
+    - point: "Data integrity in exhibits: every number traceable to the findings; axes start at zero or breaks are marked; no invented figures"
+      dimension: integrity
+    - point: "The churn/NRR nuance survives visualization — 12% logo churn concentrated in small accounts alongside 103% NRR is presented as one coherent picture, not as contradictory factoids on separate slides"
+      dimension: insight
+  common_failures:
+    - failure: "Label titles ('Growth performance', 'Cost overview') instead of assertions"
+      dimension: visual_design
+    - failure: "Slides that are the memo pasted into boxes — walls of bullets, no exhibits, or tables where charts should be"
+      dimension: visual_design
+    - failure: "Broken or overflowing layout when rendered at 1280×720 (content clipped, overlapping elements)"
+      dimension: visual_design
+    - failure: "Meaning encoded only in color (fails the grayscale requirement)"
+      dimension: visual_design
+  judge_notes: |
+    Score `visual_design` from the attached slide renders, not from reading the
+    markup; score content dimensions from both. If renders are missing (rendering
+    failed), score content dimensions only, set visual_design from markup with
+    confidence "low", and flag for human review. Any defensible recommendation
+    (efficiency pivot or disciplined middle path) is acceptable — the deck is
+    judged on whether the visuals argue it. This task's visual_design dimension is
+    human-primary: always flagged for human review.

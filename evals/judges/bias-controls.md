@@ -68,7 +68,20 @@ them is not comparable to one produced with them.
 - Never benchmark a model on tasks that were used to fine-tune or prompt-tune any
   system under test.
 
-## 10. Human override
+## 10. Vision judging & human-primary dimensions
+
+- `robustness` and `visual_design` (artifact categories K/L/M) are **human-primary**:
+  judge scores are recorded for the paired-agreement data but marked provisional in
+  the scorecard until graduated per `human-review/protocol.md`.
+- Visual scoring must use the **rendered artifact** (slide screenshots attached to
+  the judge call), never the markup alone. If rendering fails, the judge scores
+  content dimensions only and the response is flagged.
+- Known vision-judge failure modes to watch in reconciliation: over-rewarding dense
+  "professional-looking" slides, missing clipped/overflowing content, and not
+  noticing chart–data mismatches. These are standing items in the wave retro until
+  graduation.
+
+## 11. Human override
 
 - Human scores, when present, supersede judge scores in the scorecard (judge scores
   retained for the agreement metric). Disagreements ≥ 2 points on any dimension are

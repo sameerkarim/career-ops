@@ -192,6 +192,7 @@ async function cmdRun(ctx) {
         };
         try {
           Object.assign(record, await runTask(provider, cand, task, wave));
+          saveArtifact(record, task, outDir);
           record.latency_ms = Date.now() - started;
           record.cost_usd = costUsd(cand.model, record.usage);
           record.error = null;
@@ -277,6 +278,57 @@ async function runTask(provider, cand, task, wave) {
   }
 
   fail(`unknown mode "${task.mode}"`);
+}
+
+// ------------------------------------------------------- artifact handling
+
+// HTML deliverables are saved to artifacts/ at run time; the judge step renders
+// them to slide screenshots so visual_design is scored from what a human sees.
+function extractHtml(text) {
+  const m = text.match(/```html\n([\s\S]*?)```/);
+  if (m) return m[1];
+  const i = text.search(/<!doctype html|<html[\s>]/i);
+  return i >= 0 ? text.slice(i) : null;
+}
+
+function saveArtifact(record, task, outDir) {
+  if (task.deliverable_type !== "html" || !record.response) return;
+  const html = extractHtml(record.response);
+  if (!html) {
+    record.artifact_path = null;
+    record.artifact_error = "no HTML found in response";
+    return;
+  }
+  const dir = path.join(outDir, "artifacts");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${record.response_id}.html`);
+  fs.writeFileSync(file, html);
+  record.artifact_path = path.relative(ROOT, file);
+}
+
+async function renderArtifact(record, outDir) {
+  const htmlPath = path.join(ROOT, record.artifact_path);
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    await page.goto("file://" + htmlPath, { waitUntil: "networkidle" });
+    const slides = await page.$$(".slide");
+    const shots = [];
+    if (slides.length) {
+      for (const s of slides.slice(0, 8)) shots.push(await s.screenshot());
+    } else {
+      shots.push(await page.screenshot({ fullPage: true }));
+    }
+    // Persist renders for human reviewers (protocol: humans review the same images).
+    const dir = path.join(outDir, "artifacts");
+    shots.forEach((buf, i) =>
+      fs.writeFileSync(path.join(dir, `${record.response_id}.slide${i + 1}.png`), buf),
+    );
+    return shots;
+  } finally {
+    await browser.close();
+  }
 }
 
 // -------------------------------------------------------------------- judge
@@ -365,6 +417,9 @@ function buildJudgeUserMessage(task, record, weights) {
     record.trace
       ? `\n# Execution trace\n${JSON.stringify(record.trace, null, 1).slice(0, 20000)}`
       : "",
+    record.artifact_path
+      ? `\nNOTE: rendered screenshots of the candidate's artifact are attached as images. Score visual_design from the images (what a human sees), content dimensions from both images and source.`
+      : "",
     `\nEvaluate now per your instructions. Output JSON only.`,
   ]
     .filter(Boolean)
@@ -413,6 +468,36 @@ async function cmdJudge(ctx) {
     const task = taskById[record.task_id];
     if (!task) continue;
     process.stdout.write(`judge ${record.response_id} ... `);
+
+    // Render HTML artifacts to slide images for vision judging; degrade gracefully.
+    let images = [];
+    let renderError = null;
+    if (record.artifact_path) {
+      try {
+        images = await renderArtifact(record, outDir);
+      } catch (e) {
+        renderError = String(e?.message ?? e);
+      }
+    }
+    const userText =
+      buildJudgeUserMessage(task, record, weights) +
+      (renderError
+        ? `\n\nWARNING: artifact rendering failed (${renderError}). Score content dimensions from the source; if you score visual_design from markup alone, set confidence to "low".`
+        : "");
+    const userContent = images.length
+      ? [
+          { type: "text", text: userText },
+          ...images.map((buf) => ({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: buf.toString("base64"),
+            },
+          })),
+        ]
+      : userText;
+
     const resp = await client.messages.create({
       model: wave.judge.model,
       max_tokens: wave.judge.max_tokens ?? 16000,
@@ -427,7 +512,7 @@ async function cmdJudge(ctx) {
         },
       ],
       output_config: { format: { type: "json_schema", schema: JUDGE_SCHEMA } },
-      messages: [{ role: "user", content: buildJudgeUserMessage(task, record, weights) }],
+      messages: [{ role: "user", content: userContent }],
     });
     const text = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("");
     let judged;
@@ -441,6 +526,11 @@ async function cmdJudge(ctx) {
       judged.dimension_scores.map((d) => [d.dimension, d.score]),
     );
     const comp = computeComposite(task, scoresByDim, weights, judged.gates_triggered);
+    // Human-primary dimensions (e.g. robustness, visual_design) always go to humans;
+    // their judge scores are provisional until graduated (human-review/protocol.md).
+    const humanPrimary = (weights.human_primary_dimensions ?? []).filter(
+      (d) => scoresByDim[d] != null,
+    );
     appendJsonl(outFile, {
       response_id: record.response_id,
       task_id: record.task_id,
@@ -456,8 +546,13 @@ async function cmdJudge(ctx) {
       top_issues: judged.top_issues,
       summary: judged.summary,
       confidence: judged.confidence,
+      human_primary_dimensions: humanPrimary,
+      render_error: renderError,
       flagged_for_human:
-        judged.confidence === "low" || comp.gates.length > 0 ? true : false,
+        judged.confidence === "low" ||
+        comp.gates.length > 0 ||
+        humanPrimary.length > 0 ||
+        renderError != null,
     });
     console.log(`composite ${comp.composite_after_gates} (${judged.confidence})`);
   }
@@ -500,10 +595,11 @@ const PROFILES = {
   Analyst: ["B", "C", "H"],
   Communicator: ["D", "F", "J"],
   Researcher: ["G"],
+  Builder: ["K", "L", "M"],
 };
 
 function cmdReport(ctx) {
-  const { wave, outDir } = ctx;
+  const { wave, outDir, weights } = ctx;
   const scores = readJsonl(path.join(outDir, "scores.jsonl"));
   const human = readJsonl(path.join(outDir, "human-scores.jsonl"));
   const responses = readJsonl(path.join(outDir, "responses.jsonl"));
@@ -524,7 +620,8 @@ function cmdReport(ctx) {
   }
   const avg = (a) => (a?.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(2) : null);
 
-  let md = `# Scorecard — ${wave.wave}\n\nJudge: ${wave.judge.model} (prompt v${wave.pins.judge_prompt_version}, rubric v${wave.pins.rubric_version}). Human scores supersede judge scores where present.\n\n`;
+  const hp = weights.human_primary_dimensions ?? [];
+  let md = `# Scorecard — ${wave.wave}\n\nJudge: ${wave.judge.model} (prompt v${wave.pins.judge_prompt_version}, rubric v${wave.pins.rubric_version}). Human scores supersede judge scores where present.${hp.length ? ` Judge scores on human-primary dimensions (${hp.join(", ")}) are provisional pending graduation (human-review/protocol.md).` : ""}\n\n`;
   md += `## Composite by category\n\n| Model | ${cats.join(" | ")} |\n|---|${cats.map(() => "---").join("|")}|\n`;
   for (const m of models) {
     md += `| ${m} | ${cats.map((c) => avg(cell[`${m}|${c}`]) ?? "—").join(" | ")} |\n`;

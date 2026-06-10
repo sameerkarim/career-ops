@@ -1,0 +1,73 @@
+id: K-01
+version: "1.0"
+title: three-year-projection-model
+category: K
+mode: single_turn
+difficulty: standard
+est_minutes_human: 75
+deliverable_type: sheet_spec
+
+prompt: |
+  Arcadia Analytics (B2B data-tooling SaaS) is preparing for a growth-financing
+  conversation. The CFO asks you to build the 3-year P&L projection model the
+  partner will stress-test live in the meeting. It will be implemented 1:1 in a
+  spreadsheet by an analyst, so deliver a full **sheet specification**: tabs, every
+  row labeled, and the formula for every calculated cell written explicitly in
+  terms of named inputs (e.g. `= Revenue[Y1] * GrossMargin`). No prose model —
+  the spec IS the deliverable.
+
+  Base-case assumptions (FY0 = last actual year):
+  - FY0 revenue: €10.0M
+  - Revenue growth: 25% p.a. (driver — partner will change this live)
+  - Gross margin: 70% of revenue (driver)
+  - FY0 operating expenses: €6.0M, growing 10% p.a. (driver)
+  - Ignore D&A, interest, and tax — the meeting works at EBITDA level
+  - Capex runs at 3% of revenue; show it as a memo line below EBITDA (not in it)
+
+  Requirements:
+  1. Tab structure with a clean separation of inputs, calculations, and outputs.
+  2. FY1–FY3 P&L to EBITDA, with EBITDA margin per year.
+  3. A sensitivity table: FY3 EBITDA across revenue growth {20%, 25%, 30%} ×
+     gross margin {65%, 70%, 75%}.
+  4. State the FY3 base-case revenue and EBITDA values your spec produces (the
+     analyst will use them to verify the build).
+  5. Note the model's limits: what the partner might ask that this structure
+     cannot answer without rework.
+
+constraints:
+  max_words: 900
+  format: sheet specification (markdown tables for tabs, explicit formulas)
+
+key:
+  required_points:
+    - point: "Architecture separates an Inputs/Drivers tab (all 4 drivers as named, single-point-of-change assumptions) from Calculations and Outputs; no driver value appears hardcoded inside a formula"
+      dimension: robustness
+    - point: "Formulas are explicit and correct: Revenue[Yn] = Revenue[Yn-1] × (1 + Growth); GrossProfit = Revenue × GM; Opex[Yn] = Opex[Yn-1] × (1 + OpexGrowth); EBITDA = GrossProfit − Opex; Capex = Revenue × 3% as memo"
+      dimension: rigor
+    - point: "Base case verified: FY3 revenue ≈ €19.53M, FY3 EBITDA ≈ €5.69M (and FY3 EBITDA margin ≈ 29%)"
+      dimension: rigor
+    - point: "Sensitivity table present as a 3×3 grid driven by the named inputs (not hand-typed values), with correct corner values"
+      dimension: robustness
+    - point: "Limits stated honestly (e.g., no cash/working-capital view, annual not monthly granularity, opex not driver-linked to revenue, no headcount build)"
+      dimension: integrity
+  common_failures:
+    - failure: "Magic numbers: 1.25 or 0.7 written inside calculation formulas instead of referencing the named driver"
+      dimension: robustness
+    - failure: "Includes capex inside EBITDA, or applies opex growth to a recomputed base rather than compounding"
+      dimension: rigor
+    - failure: "Delivers a narrated 'model description' or just the output table — no implementable formulas"
+      dimension: robustness
+  objective:
+    type: numeric
+    answer: "FY3 revenue €19.53M; FY3 base EBITDA €5.69M; sensitivity corners — g20/gm70: €4.11M, g30/gm70: €7.39M, g25/gm65: €4.71M, g25/gm75: €6.66M"
+    tolerance: "±2% on each figure"
+  judge_notes: |
+    Worked solution (FY3): revenue = 10 × 1.25³ = 19.531; opex = 6 × 1.1³ = 7.986;
+    EBITDA = 19.531 × 0.70 − 7.986 = 5.686. Sensitivity grid at FY3 (EBITDA, €M):
+    growth 20/25/30 × GM 65/70/75 → opex constant at 7.986;
+    g20: 11.232−7.986=3.25 | 12.096−7.986=4.11 | 12.960−7.986=4.97
+    g25: 12.695−7.986=4.71 | 13.672−7.986=5.69 | 14.648−7.986=6.66
+    g30: 14.281−7.986=6.29 | 15.379−7.986=7.39 | 16.478−7.986=8.49
+    Spot-check at least 4 grid cells. `robustness` is scored on the architecture —
+    could the partner change one input cell and watch everything flow? — and is
+    human-primary: flag for human review regardless of your confidence.

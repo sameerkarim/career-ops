@@ -9,7 +9,7 @@ notes: "Bring-up wave: framework validation, 100% human review."
 pins:
   task_dir: evals/tasks # task bank; record the git SHA in `task_sha` at run time
   task_sha: null # filled automatically by `runner.mjs run`
-  rubric_version: "1.0" # must match rubrics/core-dimensions.md + weights.yml
+  rubric_version: "1.1" # must match rubrics/core-dimensions.md + weights.yml
   judge_prompt_version: "1.0" # must match judges/absolute-judge.md
 
 # Which tasks to run. Use ids or "all".

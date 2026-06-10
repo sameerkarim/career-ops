@@ -6,7 +6,7 @@
 #
 # Version: 1.0 — pinned per wave; bump on any change.
 
-version: "1.0"
+version: "1.1"
 
 categories:
   A: # Problem framing & structuring
@@ -79,12 +79,41 @@ categories:
     communication: 0.30
     actionability: 0.15
     integrity: 0.15
+  K: # Financial models & projections (artifact)
+    structure: 0.10
+    rigor: 0.30
+    robustness: 0.30
+    insight: 0.05
+    communication: 0.05
+    actionability: 0.05
+    integrity: 0.15
+  L: # Presentations & visual communication (artifact)
+    structure: 0.10
+    rigor: 0.05
+    insight: 0.15
+    communication: 0.25
+    visual_design: 0.30
+    actionability: 0.05
+    integrity: 0.10
+  M: # Project & implementation planning (artifact)
+    structure: 0.15
+    rigor: 0.15
+    robustness: 0.25
+    insight: 0.05
+    communication: 0.05
+    actionability: 0.25
+    integrity: 0.10
 
 # Added on top of core weights for mode=agentic runs (then renormalized).
 agentic_overlay:
   sources: 0.25
   efficiency: 0.10
   completion: 0.15
+
+# Dimensions where human judgment is primary: judge scores on these are provisional
+# (scorecard marks them unvalidated; responses scoring them are always human-reviewed)
+# until judge–human Spearman ≥ 0.7 for two consecutive waves. See human-review/protocol.md.
+human_primary_dimensions: [robustness, visual_design]
 
 # Hard rules applied after weighting:
 gates:

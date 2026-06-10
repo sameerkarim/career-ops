@@ -11,6 +11,13 @@ mode: single_turn         # single_turn | multi_turn | agentic
 difficulty: standard      # standard | hard | expert
 est_minutes_human: 45     # what a strong senior consultant would need
 
+deliverable_type: text    # text (default) | sheet_spec | html
+                          #   sheet_spec → markdown tab/formula spreadsheet spec (category K)
+                          #   html       → self-contained HTML artifact (e.g. slide deck);
+                          #                the runner saves it to results/<wave>/artifacts/ and
+                          #                the judge step renders slide screenshots (Playwright)
+                          #                and attaches them to the judge call for visual scoring
+
 prompt: |                 # what the candidate sees (the brief)
   ...
 
