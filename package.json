@@ -14,10 +14,7 @@
     "update": "node update-system.mjs apply",
     "rollback": "node update-system.mjs rollback",
     "liveness": "node check-liveness.mjs",
-    "scan": "node scan.mjs",
-    "evals:run": "node evals/harness/runner.mjs run",
-    "evals:judge": "node evals/harness/runner.mjs judge",
-    "evals:report": "node evals/harness/runner.mjs report"
+    "scan": "node scan.mjs"
   },
   "keywords": [
     "ai",
@@ -34,7 +31,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.92.0",
     "js-yaml": "^4.1.1",
     "playwright": "^1.58.1"
   }
