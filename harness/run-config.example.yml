@@ -1,0 +1,130 @@
+# Wave manifest — copy to harness/waves/wave-NNN.yml and pin everything.
+# A wave's scores are only comparable to other waves that share rubric/judge pins
+# (see judges/bias-controls.md for the bridge-wave procedure when pins change).
+
+wave: wave-001
+created: 2026-06-10
+notes: "Bring-up wave: framework validation, 100% human review."
+
+pins:
+  task_dir: tasks # task bank; record the git SHA in `task_sha` at run time
+  task_sha: null # filled automatically by `runner.mjs run`
+  rubric_version: "1.1" # must match rubrics/core-dimensions.md + weights.yml
+  judge_prompt_version: "1.0" # must match judges/absolute-judge.md
+
+# Which tasks to run. Use ids or "all".
+tasks: all
+
+# How many times to run each (task × candidate). >1 recommended for noisy/agentic
+# tasks; composites are averaged across repeats.
+repeats: 1
+
+judge:
+  provider: anthropic
+  model: claude-opus-4-8
+  # Judge always runs with adaptive thinking and structured JSON output; see
+  # judges/bias-controls.md §7 for re-judging rules near decision boundaries.
+  max_tokens: 16000
+
+# Candidate systems under test — `kind: model` (default) or `kind: pipeline`
+# (orchestrated stages; see harness/orchestration.md). Anything affecting
+# generation belongs here so the params hash captures it.
+#   pricing: $/MTok {input, output} — built in for Anthropic models, required for
+#            meaningful cost columns on other providers (0 for local)
+#   privacy: free-form tier label (local | cloud-us | cloud-eu | cloud-cn | ...)
+candidates:
+  - name: claude-opus-4-8
+    provider: anthropic
+    model: claude-opus-4-8
+    privacy: cloud-us
+    params:
+      max_tokens: 16000
+      thinking: adaptive
+  - name: claude-sonnet-4-6
+    provider: anthropic
+    model: claude-sonnet-4-6
+    privacy: cloud-us
+    params:
+      max_tokens: 16000
+      thinking: adaptive
+  - name: claude-haiku-4-5
+    provider: anthropic
+    model: claude-haiku-4-5
+    privacy: cloud-us
+    params:
+      max_tokens: 8000
+
+  # --- Other providers: one openai-compatible adapter covers OpenAI, Gemini
+  # (OpenAI-compat endpoint), DeepSeek/Qwen/Moonshot, Groq, OpenRouter, and all
+  # local servers (Ollama, vLLM, LM Studio). See harness/orchestration.md.
+  # - name: gpt-example
+  #   provider: openai-compatible
+  #   base_url: https://api.openai.com/v1
+  #   api_key_env: OPENAI_API_KEY
+  #   model: <model-id>
+  #   pricing: { input: 0.0, output: 0.0 }   # $/MTok from provider price list
+  #   privacy: cloud-us
+  #   params: { max_tokens: 8000, request: { temperature: 0.2 } }
+  # - name: local-qwen
+  #   provider: openai-compatible
+  #   base_url: http://localhost:11434/v1
+  #   model: qwen3:32b
+  #   pricing: { input: 0, output: 0 }
+  #   privacy: local
+
+  # --- Orchestration example: local drafts + cheap frontier review. Compare
+  # against a frontier solo run on the same wave to measure the quality gap vs.
+  # cost/privacy gain. Full pattern library: harness/orchestration.md.
+  # - name: local-mix
+  #   kind: pipeline
+  #   stages:
+  #     - name: draft
+  #       provider: openai-compatible
+  #       base_url: http://localhost:11434/v1
+  #       model: qwen3:32b
+  #       pricing: { input: 0, output: 0 }
+  #       privacy: local
+  #       prompt: "{{brief}}"
+  #     - name: critique
+  #       provider: anthropic
+  #       model: claude-haiku-4-5
+  #       privacy: cloud-us
+  #       system: "You are a demanding engagement partner reviewing a junior's draft. List the specific, material improvements needed — analytical errors first, then structure, then language. Be terse."
+  #       prompt: "# Brief\n{{brief}}\n\n# Draft\n{{draft}}"
+  #     - name: revise
+  #       provider: openai-compatible
+  #       base_url: http://localhost:11434/v1
+  #       model: qwen3:32b
+  #       pricing: { input: 0, output: 0 }
+  #       privacy: local
+  #       prompt: "Revise the draft to address every point in the critique. Output only the final deliverable.\n\n# Brief\n{{brief}}\n\n# Draft\n{{draft}}\n\n# Critique\n{{critique}}"
+
+# Agentic scaffold registry. Tasks reference these by name (task.agentic.scaffold).
+# A scaffold = system prompt + tool surface + loop policy. Comparing scaffolds with
+# the same underlying model is how you evaluate *systems* rather than models.
+scaffolds:
+  research-agent:
+    description: "Single model with server-side web search + fetch, plan-then-execute system prompt."
+    tools: [web_search, web_fetch]
+    system: |
+      You are a research analyst preparing client-ready due-diligence material.
+      Plan your research before searching. Prefer primary sources. Record where
+      every figure comes from; cite inline. If sources conflict, surface the
+      conflict and adjudicate. Respect the stated tool-call budget; stop searching
+      when marginal searches stop changing your conclusions, then write the
+      deliverable in the requested format.
+  # analyst-reviewer-pair: (v2) generator model + reviewer model second pass
+  # planner-workers: (v2) decompose → parallel workers → synthesizer
+  artifact-builder:
+    description: "Code-execution scaffold producing real files (xlsx/docx/pptx). Anthropic provider only (server-side code execution)."
+    tools: [code_execution]
+    system: |
+      You build client-ready files in the code-execution environment. Use the
+      right library for the format (openpyxl for .xlsx, python-docx, python-pptx).
+      Formulas in spreadsheets must be LIVE formulas referencing input cells —
+      never paste computed values where a formula belongs, and never bury numeric
+      constants inside formulas. Label everything; the recipient gets no
+      walkthrough. Save the final file in the working directory (it is collected
+      automatically) and finish with a 5-line summary of what you built.
+
+output_dir: results

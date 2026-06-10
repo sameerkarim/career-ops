@@ -1,0 +1,58 @@
+id: F-01
+version: "1.0"
+title: postmerger-sales-org-announcement
+category: F
+mode: single_turn
+difficulty: hard
+est_minutes_human: 50
+
+prompt: |
+  Helix Industrial (your client) closed its acquisition of competitor Varga Systems
+  six weeks ago. The combined sales organization (Helix: 60 reps, Varga: 45 reps) has
+  overlapping territories in 8 of 12 regions. The integration steering committee has
+  approved the new org design: 90 territories, single P&L, Helix's CRM and comp plan.
+  It must be announced in 3 weeks; until then it is confidential.
+
+  Complications:
+  - Dana Reyes, Varga's top enterprise rep (carries 9% of Varga's revenue, deep
+    relationships with 3 strategic accounts), will lose her current region in the
+    redesign; the new map gives her a smaller, unfamiliar territory.
+  - Varga's regional VP (her manager) opposed the territory map in committee and lost.
+  - Two Varga reps have already resigned since close; recruiters are circling.
+  - The 3 strategic accounts Dana covers are all up for renewal within 5 months.
+  - Sales leadership wants to announce at the all-hands in one go 'to be fair'.
+
+  The CHRO asks you for: (1) a stakeholder map with the 4–6 people/groups that
+  determine whether this lands, and what each needs; (2) the announcement sequencing
+  you recommend (who hears what, when), including whether you back the all-hands-only
+  plan; (3) the talking points for the pre-announcement conversation with Dana —
+  what is said, what is promised, what is explicitly not promised.
+
+constraints:
+  max_words: 700
+  format: advisory note
+
+key:
+  required_points:
+    - point: "Rejects (or heavily amends) all-hands-only: managers and high-flight-risk individuals are briefed before the broadcast, with a tight confidentiality window and a leak plan"
+      dimension: insight
+    - point: "Stakeholder map includes Dana, the dissenting Varga VP (must be enrolled or neutralized before announcement — a manager who lost the argument cannot be discovered undermining it), Varga rank-and-file (watching how Dana is treated), and the strategic accounts/renewals"
+      dimension: structure
+    - point: "Dana conversation is concrete: acknowledges the loss honestly, ties retention to the renewal-critical accounts (e.g., named account-transition or retention role/incentive), and is explicit about what is NOT promised (no reversal of the territory map)"
+      dimension: actionability
+    - point: "Connects retention risk to revenue mechanically: 3 renewals within 5 months covered by the person most likely to leave — sequencing protects the renewals, not just feelings"
+      dimension: rigor
+  common_failures:
+    - failure: "Generic change-management boilerplate (ADKAR/Kotter stages recited) with no specifics about Dana, the VP, or the renewals"
+      dimension: insight
+    - failure: "Recommends promising Dana her old territory back or an immediate promotion — committing the client to reversals/rewards the steering committee hasn't approved"
+      dimension: integrity
+    - failure: "Talking points are euphemistic to the point of dishonesty ('exciting new opportunity') with no acknowledgment that she is losing something"
+      dimension: communication
+  judge_notes: |
+    This task measures political realism and judgment. A 5 on insight requires
+    treating the dissenting VP as an active risk channel and the Varga population as
+    an audience that reads Dana's treatment as a signal. Retention economics
+    (cost of a counter-offer vs. risk to 3 renewals) earns rigor credit even with
+    rough numbers. Penalize any plan that relies on nobody leaking for 3 weeks
+    across 105 reps without a contingency.

@@ -1,0 +1,28 @@
+{
+  "name": "consulting-evals",
+  "version": "1.0.0",
+  "description": "Eval framework for benchmarking LLMs and orchestrated multi-model systems on management-consulting work: waves, anchored rubrics, LLM-judge with human calibration, multi-provider adapters, cost/quality/privacy comparison",
+  "type": "module",
+  "scripts": {
+    "validate": "node harness/runner.mjs validate",
+    "run": "node harness/runner.mjs run",
+    "audit": "node harness/runner.mjs audit",
+    "judge": "node harness/runner.mjs judge",
+    "report": "node harness/runner.mjs report"
+  },
+  "keywords": [
+    "llm",
+    "evals",
+    "llm-as-judge",
+    "benchmarking",
+    "consulting",
+    "orchestration"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.92.0",
+    "js-yaml": "^4.1.1",
+    "playwright": "^1.58.1"
+  }
+}

@@ -1,0 +1,58 @@
+# Category registry — single source of truth for task categories and profiles.
+#
+# To add a new use case/category:
+#   1. Add an entry here (id, name, profile; create a new profile name if needed)
+#   2. Add its dimension weights in rubrics/weights.yml (must sum to 1.0; any new
+#      dimension needs anchors in rubrics/core-dimensions.md first)
+#   3. Drop task YAMLs in tasks/ using the new category id
+#   4. Run: node harness/runner.mjs validate
+# The runner reads this file — no code changes needed.
+#
+# `human_primary: true` marks categories whose responses are always human-reviewed
+# (in addition to the dimension-level human-primary list in weights.yml).
+
+version: "1.0"
+
+categories:
+  A:
+    name: Problem framing & structuring
+    profile: Structurer
+  B:
+    name: Market & competitive analysis
+    profile: Analyst
+  C:
+    name: Quantitative & financial reasoning
+    profile: Analyst
+  D:
+    name: Synthesis & executive communication
+    profile: Communicator
+  E:
+    name: Strategic options & recommendation
+    profile: Structurer
+  F:
+    name: Organization, people & change
+    profile: Communicator
+  G:
+    name: Research & due diligence
+    profile: Researcher
+  H:
+    name: Data interpretation
+    profile: Analyst
+  I:
+    name: Critique & red-teaming
+    profile: Structurer
+  J:
+    name: Client advisory interaction
+    profile: Communicator
+  K:
+    name: Financial models & projections
+    profile: Builder
+    human_primary: true
+  L:
+    name: Presentations & visual communication
+    profile: Builder
+    human_primary: true
+  M:
+    name: Project & implementation planning
+    profile: Builder
+    human_primary: true
