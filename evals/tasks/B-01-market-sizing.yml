@@ -1,0 +1,53 @@
+id: B-01
+version: "1.0"
+title: employer-ebike-leasing-sizing
+category: B
+mode: single_turn
+difficulty: standard
+est_minutes_human: 50
+
+prompt: |
+  A private-equity client is screening Velora, a company that runs employer-sponsored
+  e-bike leasing programs in Germany (the employer offers bike leasing as a salary-
+  conversion benefit; the platform handles dealers, insurance, and payroll
+  integration; revenue is a take-rate on the lease value).
+
+  The partner needs, by tomorrow morning, a first-pass view of the addressable
+  market: "Roughly how big is the annual German employer e-bike-leasing market today
+  in lease volume (€), and is it big enough to support a platform doing €80M revenue
+  at a ~10% take rate?"
+
+  Build a bottom-up estimate with explicit drivers and stated assumptions, sanity-
+  check it top-down with an independent method, give a range (not a point), and state
+  which assumption your answer is most sensitive to. You have no browsing — use
+  reasonable, clearly-labeled assumptions for any figure you don't know.
+
+constraints:
+  max_words: 600
+  format: memo with a visible calculation chain
+
+key:
+  required_points:
+    - point: "Bottom-up chain is complete and dimensionally consistent, e.g. employed population → share at employers offering bike leasing → employee adoption rate → average annual lease value → € market; every multiplier stated as an assumption"
+      dimension: rigor
+    - point: "Independent top-down or triangulation check (e.g., from annual e-bike unit sales in Germany × share leased via employer × average price) — a genuinely different method, not the same chain re-ordered"
+      dimension: rigor
+    - point: "Answers the partner's actual question: compares the resulting market to the €800M lease volume implied by €80M revenue at 10% take, and says whether that share is plausible"
+      dimension: insight
+    - point: "Gives a range and names the single most sensitive assumption (typically adoption rate or employer-offering share)"
+      dimension: integrity
+  common_failures:
+    - failure: "Asserts specific market figures or competitor shares as known facts without flagging them as assumptions (no browsing was available)"
+      dimension: integrity
+    - failure: "Top-down 'check' silently reuses the bottom-up assumptions, so it cannot disconfirm anything"
+      dimension: rigor
+    - failure: "Point estimate with false precision (e.g., '€1.43bn') and no sensitivity"
+      dimension: rigor
+  judge_notes: |
+    There is no single right number; plausible answers land roughly €1–3bn annual
+    lease volume. Judge the machinery, not the figure: explicit drivers, defensible
+    magnitudes (German employed population ~45M is common knowledge; adoption
+    single-digit %), real triangulation, and a direct verdict on the €800M question
+    (it implies a 25–80% share of plausible market — answers should flag that an
+    €80M-revenue platform needs either market growth or take-rate expansion).
+    Penalize confident citation of unverifiable 'market reports'.

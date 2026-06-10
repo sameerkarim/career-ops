@@ -1,0 +1,59 @@
+id: H-01
+version: "1.0"
+title: cohort-retention-insights
+category: H
+mode: single_turn
+difficulty: hard
+est_minutes_human: 40
+
+prompt: |
+  The CEO of Loopin (a consumer habit-tracking app, freemium, paid acquisition
+  ramping hard since March) sends you the retention table below with one line:
+  "Investor meeting Friday. Our blended monthly retention number has been falling
+  all year and I'm being told the product is getting worse. What's actually going
+  on, and what do we do?"
+
+  Give the 3 most decision-relevant insights from this table (each with the numbers
+  that prove it) and the single action you'd prioritize. Do not restate the table.
+
+inputs: |
+  Monthly signup cohorts; cells show % of the cohort still active N months after
+  signup (M1 = one month after signup). Dashes = not yet observed.
+
+  | Cohort | Signups | M1  | M2  | M3  | M4  | M5  | M6  |
+  |--------|---------|-----|-----|-----|-----|-----|-----|
+  | Jan    | 1,000   | 62% | 48% | 40% | 36% | 34% | 33% |
+  | Feb    | 1,200   | 60% | 47% | 40% | 36% | 34% | —   |
+  | Mar    | 1,500   | 57% | 46% | 40% | 37% | —   | —   |
+  | Apr    | 2,000   | 53% | 44% | 39% | —   | —   | —   |
+  | May    | 2,700   | 50% | 43% | —   | —   | —   | —   |
+  | Jun    | 3,600   | 47% | —   | —   | —   | —   | —   |
+
+constraints:
+  max_words: 450
+  format: short memo
+
+key:
+  required_points:
+    - point: "Insight — M1 retention is deteriorating steadily with the paid ramp (62% → 47%, −15pp Jan→Jun) while cohort sizes 3.6×: acquisition quality is diluting, the product is not obviously 'getting worse'"
+      dimension: insight
+    - point: "Insight — conditional/late retention is stable or improving: M3 is ~39–40% across all observed cohorts despite worse M1 intakes, and survival M1→M3 improves (Jan 40/62≈65% vs Mar 40/57≈70%, Apr 39/53≈74%); the tail flattens after M4 (~1pp/month)"
+      dimension: rigor
+    - point: "Explains the falling blended metric as a mix artifact: ever-larger young cohorts (with naturally low early retention) dominate the blend — a composition effect, not necessarily product decline"
+      dimension: insight
+    - point: "Action follows from the diagnosis: fix early activation / first-month experience for paid-acquired users (or tighten paid targeting), with the falling-blended-metric narrative for the investor framed honestly"
+      dimension: actionability
+  common_failures:
+    - failure: "Concludes the product is degrading, reading the table by rows without normalizing for cohort age"
+      dimension: rigor
+    - failure: "Misses the mix/composition effect entirely — accepts the blended metric at face value"
+      dimension: insight
+    - failure: "Computes percentages of percentages incorrectly or cites numbers not derivable from the table"
+      dimension: rigor
+  judge_notes: |
+    Verify every number the response cites against the table. The three required
+    analytical moves are: (1) read down columns (cohort quality trend), (2) read
+    conditional survival (product/engagement trend), (3) explain the blended metric
+    (mix shift). All three present and numerically supported = rigor 5. Two = at
+    most 4. An answer can phrase the mix effect without the term 'Simpson's paradox'
+    — the mechanism is what counts.

@@ -1,0 +1,4 @@
+# Raw run data stays local; commit only the per-wave scorecard.md.
+*/responses.jsonl
+*/scores.jsonl
+*/human-scores.jsonl

@@ -1,0 +1,62 @@
+id: G-01
+version: "1.0"
+title: company-dd-research-brief
+category: G
+mode: agentic
+difficulty: standard
+est_minutes_human: 120
+
+prompt: |
+  An investor client is preparing for a first meeting with the management of Klarna
+  (the Swedish payments/BNPL company). Prepare a due-diligence pre-read covering:
+
+  1. Business model and revenue mix today (how they actually make money, not the
+     2020 story)
+  2. Financial trajectory over the last 3 reported years (revenue, profitability,
+     credit losses) with figures and sources
+  3. Competitive position (vs. Affirm, Afterpay/Block, PayPal, and bank offerings)
+  4. Regulatory exposure relevant to BNPL in their main markets
+  5. The 3 most consequential strategic moves of the last 18 months
+  6. The 5 questions the investor should ask management, each motivated by a finding
+     in the brief
+
+  Every factual claim that isn't common knowledge must carry an inline citation to a
+  source you actually fetched. Where sources conflict (figures often do), say so and
+  state which you trust and why. Flag anything you could not verify.
+
+agentic:
+  scaffold: research-agent
+  tools: [web_search, web_fetch]
+  budget:
+    max_tool_calls: 30
+    max_minutes: 25
+  deliverable: "Markdown brief, max 1,200 words + a sources list; questions section mandatory"
+
+constraints:
+  max_words: 1200
+  format: research brief with inline citations and source list
+
+key:
+  required_points:
+    - point: "All six requested sections present; questions in section 6 are each traceable to a specific finding (not generic 'what is your strategy')"
+      dimension: completion
+    - point: "Financial figures carry citations to identifiable sources (annual report, prospectus/filings, reputable financial press), with reporting period stated"
+      dimension: sources
+    - point: "Recency handled: distinguishes the latest reported period from older data; at least one source from the last 12 months for 'strategic moves'"
+      dimension: sources
+    - point: "At least one explicit conflict-or-uncertainty call-out (e.g., differing revenue/valuation figures across sources) with an adjudication"
+      dimension: integrity
+  common_failures:
+    - failure: "Citations that don't support the attached claim, or URLs/sources never actually fetched in the trace"
+      dimension: sources
+    - failure: "Answers primarily from parametric memory with decorative searches — trace shows fetches whose content doesn't appear in the brief"
+      dimension: efficiency
+    - failure: "Stale picture presented as current (e.g., loss-making narrative or valuation from years ago stated as today's situation without dating it)"
+      dimension: integrity
+  judge_notes: |
+    The judge must cross-check the trace: for each load-bearing figure, verify a
+    fetched source plausibly contains it. Do not penalize the model for paywalled
+    primary sources if it transparently falls back to secondary ones. Because facts
+    move, judge against the trace's fetched content, not against the judge's own
+    memory of Klarna. The five management questions are where insight is scored —
+    they should make the investor sound like the best-prepared person in the room.

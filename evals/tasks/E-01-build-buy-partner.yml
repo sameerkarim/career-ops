@@ -1,0 +1,57 @@
+id: E-01
+version: "1.0"
+title: smb-lending-build-buy-partner
+category: E
+mode: single_turn
+difficulty: standard
+est_minutes_human: 50
+
+prompt: |
+  Crestline Bank (regional bank, ~€9bn assets, strong SMB deposit franchise, dated
+  core systems) has decided to enter digital SMB lending — small working-capital
+  loans, €25k–€250k, decisioned in days not weeks. The board has approved the move;
+  the open question is HOW. The CEO wants your recommendation: build the platform
+  in-house, buy a fintech, or partner with a lending-as-a-service provider.
+
+  Hard constraints from the board:
+  - Live with first loans within 18 months
+  - Total investment envelope €15M over 3 years
+  - No in-house ML/credit-modeling team today (and hiring senior ML talent has taken
+    9+ months historically)
+  - The regulator has flagged the bank's model-risk-management maturity as 'developing'
+    in its last review — any new credit models will face heightened scrutiny
+  - The bank must own the customer relationship and the deposit cross-sell
+
+  Deliverable: compare the three options against a consistent set of criteria, commit
+  to one (no 'it depends'), and give the top 3 risks of your chosen path with a
+  concrete mitigation for each, plus the first 90 days of execution.
+
+constraints:
+  max_words: 700
+  format: recommendation memo
+
+key:
+  required_points:
+    - point: "All three options assessed against the same explicit criteria (time-to-market, cost vs €15M, regulatory/model-risk burden, control of customer relationship, capability gap), not three unconnected essays"
+      dimension: structure
+    - point: "A single committed recommendation stated up front (partner is the natural fit for the constraints; a well-argued buy is acceptable; build is very hard to defend given 18 months, €15M, no ML team, and regulator scrutiny)"
+      dimension: actionability
+    - point: "Engages the regulatory constraint substantively: who owns the credit model, how model-risk validation works when the model is a vendor's, and that 'developing' MRM maturity makes an in-house model the slowest path"
+      dimension: rigor
+    - point: "Addresses the customer-ownership constraint explicitly in the partner option (white-label, data rights, ownership of servicing) rather than ignoring the tension"
+      dimension: insight
+    - point: "Risks are specific to the chosen path with real mitigations (e.g., vendor lock-in → contractual data portability + dual-vendor RFP; margin sharing → volume-tiered pricing), not generic ('execution risk — manage closely')"
+      dimension: actionability
+  common_failures:
+    - failure: "Recommends build (or an acquisition obviously above the envelope) without confronting the stated constraints it violates"
+      dimension: rigor
+    - failure: "Presents a weighted scoring table whose weights/scores are asserted without rationale, then 'lets the table decide'"
+      dimension: rigor
+    - failure: "Ends with 'conduct further analysis to determine the best option' — refusing the asked-for commitment"
+      dimension: actionability
+  judge_notes: |
+    Score the quality of reasoning under constraints, not which option is picked —
+    but an option that flatly violates a hard constraint without acknowledgment
+    caps rigor at 2. The 90-day plan should name real workstreams (vendor shortlist
+    and RFP, regulator pre-engagement, credit-policy definition, data/integration
+    scoping) with rough sequencing.

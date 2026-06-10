@@ -1,0 +1,73 @@
+# Wave manifest — copy to harness/waves/wave-NNN.yml and pin everything.
+# A wave's scores are only comparable to other waves that share rubric/judge pins
+# (see judges/bias-controls.md for the bridge-wave procedure when pins change).
+
+wave: wave-001
+created: 2026-06-10
+notes: "Bring-up wave: framework validation, 100% human review."
+
+pins:
+  task_dir: evals/tasks # task bank; record the git SHA in `task_sha` at run time
+  task_sha: null # filled automatically by `runner.mjs run`
+  rubric_version: "1.0" # must match rubrics/core-dimensions.md + weights.yml
+  judge_prompt_version: "1.0" # must match judges/absolute-judge.md
+
+# Which tasks to run. Use ids or "all".
+tasks: all
+
+# How many times to run each (task × candidate). >1 recommended for noisy/agentic
+# tasks; composites are averaged across repeats.
+repeats: 1
+
+judge:
+  provider: anthropic
+  model: claude-opus-4-8
+  # Judge always runs with adaptive thinking and structured JSON output; see
+  # judges/bias-controls.md §7 for re-judging rules near decision boundaries.
+  max_tokens: 16000
+
+# Candidate systems under test. `provider` selects the adapter in runner.mjs.
+# Anything affecting generation belongs here so the params hash captures it.
+candidates:
+  - name: claude-opus-4-8
+    provider: anthropic
+    model: claude-opus-4-8
+    params:
+      max_tokens: 16000
+      thinking: adaptive
+  - name: claude-sonnet-4-6
+    provider: anthropic
+    model: claude-sonnet-4-6
+    params:
+      max_tokens: 16000
+      thinking: adaptive
+  - name: claude-haiku-4-5
+    provider: anthropic
+    model: claude-haiku-4-5
+    params:
+      max_tokens: 8000
+  # Non-Anthropic candidates: add an adapter in runner.mjs `providers`, then:
+  # - name: some-other-model
+  #   provider: openai-compatible
+  #   model: ...
+  #   base_url: ...
+  #   params: { ... }
+
+# Agentic scaffold registry. Tasks reference these by name (task.agentic.scaffold).
+# A scaffold = system prompt + tool surface + loop policy. Comparing scaffolds with
+# the same underlying model is how you evaluate *systems* rather than models.
+scaffolds:
+  research-agent:
+    description: "Single model with server-side web search + fetch, plan-then-execute system prompt."
+    tools: [web_search, web_fetch]
+    system: |
+      You are a research analyst preparing client-ready due-diligence material.
+      Plan your research before searching. Prefer primary sources. Record where
+      every figure comes from; cite inline. If sources conflict, surface the
+      conflict and adjudicate. Respect the stated tool-call budget; stop searching
+      when marginal searches stop changing your conclusions, then write the
+      deliverable in the requested format.
+  # analyst-reviewer-pair: (v2) generator model + reviewer model second pass
+  # planner-workers: (v2) decompose → parallel workers → synthesizer
+
+output_dir: evals/results
