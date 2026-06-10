@@ -1,9 +1,30 @@
 # Task Taxonomy — Consulting Workflows
 
-Ten categories, A–J. Each task in `tasks/` belongs to exactly one category. Categories
-were chosen so that (a) they map to distinct day-to-day consulting workflows, (b) they
-stress different model capabilities, and (c) each can be evaluated in at least one of
-the three modes (`single_turn`, `multi_turn`, `agentic`).
+Thirteen categories, A–M. Each task in `tasks/` belongs to exactly one category.
+Categories were chosen so that (a) they map to distinct day-to-day consulting
+workflows, (b) they stress different model capabilities, and (c) each can be
+evaluated in at least one of the three modes (`single_turn`, `multi_turn`,
+`agentic`).
+
+**The machine-readable registry is `evals/categories.yml`** — this document is the
+narrative companion. The runner, profiles, and validation all read the registry.
+
+## Adding a use case or category
+
+Adding a new workflow is a config change, not a code change:
+
+1. **Registry** — add the category to `categories.yml` (id, name, profile; invent a
+   new profile name if none fits — profiles are derived from the registry).
+2. **Weights** — add a weight row in `rubrics/weights.yml` (must sum to 1.0). If the
+   use case needs a dimension that doesn't exist yet, write anchored 1–5 scales in
+   `rubrics/core-dimensions.md` first and bump the rubric version. New dimensions
+   that LLM judges haven't earned trust on go in `human_primary_dimensions`.
+3. **Tasks** — author task YAMLs per `schema/task-spec.md` (adversarial keys, and an
+   objective anchor if the category permits one).
+4. **Check** — `node evals/harness/runner.mjs validate` (cross-checks registry,
+   weights, rubric anchors, and every task file).
+5. Update this document's table, and add 2–3 frozen calibration exemplars for the
+   category before its first real wave.
 
 | ID | Category | Core workflow | Primary capability stressed | Typical mode |
 |----|----------|---------------|------------------------------|--------------|

@@ -1,16 +1,24 @@
 #!/usr/bin/env node
 // Consulting LLM evals runner.
 //
+//   node evals/harness/runner.mjs validate [--wave <wave.yml>]
 //   node evals/harness/runner.mjs run    --wave evals/harness/waves/wave-001.yml
+//   node evals/harness/runner.mjs audit  --wave evals/harness/waves/wave-001.yml
 //   node evals/harness/runner.mjs judge  --wave evals/harness/waves/wave-001.yml
 //   node evals/harness/runner.mjs report --wave evals/harness/waves/wave-001.yml
 //
-// run    → results/<wave>/responses.jsonl   (one line per task × candidate × repeat)
-// judge  → results/<wave>/scores.jsonl      (absolute-judge scores + composites)
-// report → results/<wave>/scorecard.md      (per-category table, profiles, agreement)
+// validate → checks tasks/categories/weights/wave consistency (run after authoring)
+// run      → results/<wave>/responses.jsonl  (one line per task × candidate × repeat)
+// audit    → results/<wave>/audits.jsonl     (mechanical xlsx structure audits)
+// judge    → results/<wave>/scores.jsonl     (absolute-judge scores + composites)
+// report   → results/<wave>/scorecard.md     (categories, profiles, systems, agreement)
 //
-// Requires ANTHROPIC_API_KEY for the anthropic provider. Other providers: add an
-// adapter to `providers` below.
+// Candidates come in two kinds (see harness/orchestration.md):
+//   kind: model    — one provider/model (default)
+//   kind: pipeline — orchestrated stages, each its own provider/model/privacy
+//
+// Requires ANTHROPIC_API_KEY for the anthropic provider and the judge. Other
+// providers: see harness/providers.mjs.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -18,111 +26,38 @@ import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import Anthropic from "@anthropic-ai/sdk";
+import { toFile } from "@anthropic-ai/sdk";
+import {
+  providers,
+  anthropicClient,
+  SERVER_TOOLS,
+  costUsd,
+  addUsage,
+} from "./providers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const EVALS = path.join(ROOT, "evals");
 
-// $/MTok input,output — used for indicative cost in records and the scorecard.
-const PRICES = {
-  "claude-fable-5": [10, 50],
-  "claude-opus-4-8": [5, 25],
-  "claude-opus-4-7": [5, 25],
-  "claude-opus-4-6": [5, 25],
-  "claude-sonnet-4-6": [3, 15],
-  "claude-haiku-4-5": [1, 5],
-};
-
-const SERVER_TOOLS = {
-  web_search: { type: "web_search_20260209", name: "web_search" },
-  web_fetch: { type: "web_fetch_20260209", name: "web_fetch" },
-};
-
-// ---------------------------------------------------------------- providers
-
-let _anthropic;
-const anthropicClient = () => (_anthropic ??= new Anthropic());
-
-const providers = {
-  anthropic: {
-    async generate({ model, system, messages, tools, params = {} }) {
-      const client = anthropicClient();
-      const req = {
-        model,
-        max_tokens: params.max_tokens ?? 16000,
-        messages: [...messages],
-      };
-      if (system) req.system = system;
-      if (params.thinking === "adaptive") req.thinking = { type: "adaptive" };
-      if (tools?.length) req.tools = tools;
-
-      const usage = { input_tokens: 0, output_tokens: 0, tool_calls: 0 };
-      const trace = [];
-      let resp = await client.messages.create(req);
-      addUsage(usage, resp.usage);
-      collectTrace(resp.content, trace, usage);
-      // Server-side tools (web search/fetch) pause after 10 iterations; resume.
-      let continuations = 0;
-      while (resp.stop_reason === "pause_turn" && continuations++ < 8) {
-        req.messages = [...req.messages, { role: "assistant", content: resp.content }];
-        resp = await client.messages.create(req);
-        addUsage(usage, resp.usage);
-        collectTrace(resp.content, trace, usage);
-      }
-      const text = resp.content
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join("\n");
-      return {
-        text,
-        trace,
-        usage,
-        assistantContent: resp.content,
-        stop_reason: resp.stop_reason,
-      };
-    },
-  },
-  // Add adapters for other model families here. Contract: generate({model, system,
-  // messages:[{role,content:string}], tools, params}) → {text, trace, usage}.
-};
-
-function addUsage(acc, u) {
-  if (!u) return;
-  acc.input_tokens += u.input_tokens ?? 0;
-  acc.output_tokens += u.output_tokens ?? 0;
-}
-
-function collectTrace(content, trace, usage) {
-  for (const b of content ?? []) {
-    if (b.type === "server_tool_use") {
-      usage.tool_calls += 1;
-      trace.push({ kind: "tool_use", name: b.name, input: b.input });
-    } else if (b.type?.endsWith("tool_result")) {
-      trace.push({ kind: "tool_result", type: b.type, summary: summarize(b) });
-    }
-  }
-}
-
-function summarize(block) {
-  const s = JSON.stringify(block.content ?? block).slice(0, 800);
-  return s;
-}
-
-function costUsd(model, usage) {
-  const p = PRICES[model];
-  if (!p) return null;
-  return +((usage.input_tokens * p[0] + usage.output_tokens * p[1]) / 1e6).toFixed(4);
-}
-
 // ------------------------------------------------------------------- config
+
+function loadRegistry() {
+  return yaml.load(fs.readFileSync(path.join(EVALS, "categories.yml"), "utf8"));
+}
+
+function loadTasks(taskDir) {
+  return fs
+    .readdirSync(taskDir)
+    .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
+    .map((f) => ({
+      ...yaml.load(fs.readFileSync(path.join(taskDir, f), "utf8")),
+      _file: f,
+    }));
+}
 
 function loadWave(wavePath) {
   const wave = yaml.load(fs.readFileSync(wavePath, "utf8"));
   const taskDir = path.join(ROOT, wave.pins.task_dir);
-  let tasks = fs
-    .readdirSync(taskDir)
-    .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
-    .map((f) => yaml.load(fs.readFileSync(path.join(taskDir, f), "utf8")));
+  let tasks = loadTasks(taskDir);
   if (wave.tasks !== "all") {
     const wanted = new Set(wave.tasks);
     tasks = tasks.filter((t) => wanted.has(t.id));
@@ -135,9 +70,10 @@ function loadWave(wavePath) {
       `rubric version mismatch: wave pins ${wave.pins.rubric_version}, weights.yml is ${weights.version}`,
     );
   }
+  const registry = loadRegistry();
   const outDir = path.join(ROOT, wave.output_dir ?? "evals/results", wave.wave);
   fs.mkdirSync(outDir, { recursive: true });
-  return { wave, tasks, weights, outDir, wavePath };
+  return { wave, tasks, weights, registry, outDir, wavePath };
 }
 
 function gitSha() {
@@ -154,6 +90,81 @@ const readJsonl = (f) =>
     : [];
 const appendJsonl = (f, obj) => fs.appendFileSync(f, JSON.stringify(obj) + "\n");
 
+// ----------------------------------------------------------------- validate
+
+function cmdValidate({ wavePath } = {}) {
+  const registry = loadRegistry();
+  const weights = yaml.load(
+    fs.readFileSync(path.join(EVALS, "rubrics", "weights.yml"), "utf8"),
+  );
+  const rubricDoc = fs.readFileSync(
+    path.join(EVALS, "rubrics", "core-dimensions.md"),
+    "utf8",
+  );
+  let errors = 0;
+  const err = (m) => (console.error(`  ✗ ${m}`), errors++);
+
+  // registry ↔ weights ↔ rubric anchors
+  for (const cat of Object.keys(registry.categories)) {
+    if (!weights.categories[cat]) err(`category ${cat} has no weights in weights.yml`);
+  }
+  for (const [cat, dims] of Object.entries(weights.categories)) {
+    if (!registry.categories[cat]) err(`weights for ${cat} but not in categories.yml`);
+    const sum = Object.values(dims).reduce((a, b) => a + b, 0);
+    if (Math.abs(sum - 1) > 0.001) err(`weights for ${cat} sum to ${sum.toFixed(3)}`);
+    for (const d of Object.keys(dims)) {
+      if (!rubricDoc.includes("`" + d + "`")) err(`dimension "${d}" (${cat}) has no rubric anchors`);
+    }
+  }
+
+  // tasks
+  const tasks = loadTasks(path.join(EVALS, "tasks"));
+  const ids = new Set();
+  for (const t of tasks) {
+    const where = `${t._file} (${t.id ?? "?"})`;
+    for (const f of ["id", "version", "category", "mode", "difficulty", "prompt", "key"])
+      if (!t[f]) err(`${where}: missing "${f}"`);
+    if (ids.has(t.id)) err(`${where}: duplicate id`);
+    ids.add(t.id);
+    if (t.category && !registry.categories[t.category]) err(`${where}: unknown category "${t.category}"`);
+    if (!["single_turn", "multi_turn", "agentic"].includes(t.mode)) err(`${where}: bad mode`);
+    if (t.mode === "agentic" && !t.agentic?.scaffold) err(`${where}: agentic without scaffold`);
+    if (t.mode === "multi_turn" && !t.turns?.length) err(`${where}: multi_turn without turns`);
+    for (const p of t.key?.required_points ?? [])
+      if (p.dimension && !rubricDoc.includes("`" + p.dimension + "`")) err(`${where}: key dimension "${p.dimension}" unknown`);
+  }
+
+  // wave (optional)
+  if (wavePath) {
+    const wave = yaml.load(fs.readFileSync(wavePath, "utf8"));
+    if (wave.pins.rubric_version !== weights.version)
+      err(`wave pins rubric ${wave.pins.rubric_version}, weights.yml is ${weights.version}`);
+    for (const c of wave.candidates ?? []) {
+      const kind = c.kind ?? "model";
+      if (kind === "model" && !providers[c.provider]) err(`candidate ${c.name}: no adapter "${c.provider}"`);
+      if (kind === "pipeline") {
+        if (!c.stages?.length) err(`candidate ${c.name}: pipeline without stages`);
+        for (const s of c.stages ?? []) {
+          if (!s.name) err(`candidate ${c.name}: stage missing name`);
+          if (!providers[s.provider]) err(`candidate ${c.name}/${s.name}: no adapter "${s.provider}"`);
+        }
+      }
+    }
+    const scaffolds = wave.scaffolds ?? {};
+    for (const t of tasks.filter((t) => t.mode === "agentic")) {
+      if (wave.tasks !== "all" && !wave.tasks.includes(t.id)) continue;
+      if (!scaffolds[t.agentic.scaffold]) err(`task ${t.id}: scaffold "${t.agentic.scaffold}" not in wave manifest`);
+    }
+  }
+
+  console.log(
+    errors
+      ? `validate: ${errors} error(s) across ${tasks.length} tasks`
+      : `validate: ok — ${tasks.length} tasks, ${Object.keys(registry.categories).length} categories, weights v${weights.version}${wavePath ? ", wave manifest ok" : ""}`,
+  );
+  if (errors) process.exit(1);
+}
+
 // ---------------------------------------------------------------------- run
 
 async function cmdRun(ctx) {
@@ -164,8 +175,8 @@ async function cmdRun(ctx) {
   const repeats = wave.repeats ?? 1;
 
   for (const cand of wave.candidates) {
-    const provider = providers[cand.provider];
-    if (!provider) fail(`no adapter for provider "${cand.provider}"`);
+    const kind = cand.kind ?? "model";
+    if (kind === "model" && !providers[cand.provider]) fail(`no adapter for provider "${cand.provider}"`);
     for (const task of tasks) {
       for (let r = 1; r <= repeats; r++) {
         const responseId = `${task.id}__${cand.name}__r${r}`;
@@ -178,7 +189,10 @@ async function cmdRun(ctx) {
           task_id: task.id,
           task_version: task.version,
           task_sha: sha,
-          model: cand.model,
+          model: cand.name, // system name — what scores/reports group by
+          base_model: kind === "model" ? cand.model : null,
+          system_kind: kind,
+          privacy: systemPrivacy(cand),
           system_config: {
             mode: task.mode,
             scaffold: task.agentic?.scaffold ?? null,
@@ -191,10 +205,17 @@ async function cmdRun(ctx) {
           started_at: new Date(started).toISOString(),
         };
         try {
-          Object.assign(record, await runTask(provider, cand, task, wave));
-          saveArtifact(record, task, outDir);
+          const result =
+            kind === "pipeline"
+              ? await runPipeline(cand, task)
+              : await runModelTask(providers[cand.provider], cand, task, wave);
+          Object.assign(record, result);
+          record.cost_usd =
+            record.pipeline_cost ?? costUsd(cand, record.usage);
+          delete record.pipeline_cost;
+          saveHtmlArtifact(record, task, outDir);
+          await persistGeneratedFiles(record, task, outDir);
           record.latency_ms = Date.now() - started;
-          record.cost_usd = costUsd(cand.model, record.usage);
           record.error = null;
           console.log(`ok (${record.latency_ms}ms)`);
         } catch (e) {
@@ -206,6 +227,12 @@ async function cmdRun(ctx) {
     }
   }
   console.log(`responses → ${outFile}`);
+}
+
+function systemPrivacy(cand) {
+  if ((cand.kind ?? "model") === "model") return cand.privacy ?? "cloud";
+  const tiers = [...new Set((cand.stages ?? []).map((s) => s.privacy ?? "cloud"))];
+  return tiers.join("+");
 }
 
 function candidateBrief(task) {
@@ -220,7 +247,7 @@ function candidateBrief(task) {
   return brief; // note: task.key is judge-only and never enters the candidate prompt
 }
 
-async function runTask(provider, cand, task, wave) {
+async function runModelTask(provider, cand, task, wave) {
   const brief = candidateBrief(task);
 
   if (task.mode === "single_turn") {
@@ -228,8 +255,15 @@ async function runTask(provider, cand, task, wave) {
       model: cand.model,
       messages: [{ role: "user", content: brief }],
       params: cand.params,
+      candidate: cand,
     });
-    return { response: out.text, transcript: null, trace: null, usage: out.usage };
+    return {
+      response: out.text,
+      transcript: null,
+      trace: null,
+      usage: out.usage,
+      output_file_ids: out.output_file_ids,
+    };
   }
 
   if (task.mode === "multi_turn") {
@@ -246,6 +280,7 @@ async function runTask(provider, cand, task, wave) {
         model: cand.model,
         messages,
         params: cand.params,
+        candidate: cand,
       });
       messages.push({ role: "assistant", content: last.assistantContent ?? last.text });
       transcript.push({ role: "assistant", content: last.text });
@@ -273,11 +308,83 @@ async function runTask(provider, cand, task, wave) {
       messages: [{ role: "user", content: brief }],
       tools,
       params: cand.params,
+      candidate: cand,
     });
-    return { response: out.text, transcript: null, trace: out.trace, usage: out.usage };
+    return {
+      response: out.text,
+      transcript: null,
+      trace: out.trace,
+      usage: out.usage,
+      output_file_ids: out.output_file_ids,
+    };
   }
 
   fail(`unknown mode "${task.mode}"`);
+}
+
+// ---------------------------------------------------------------- pipelines
+
+// Orchestration pipelines: sequential named stages; each stage's prompt is a
+// template over {{brief}} and {{<earlier_stage_name>}}; `samples: N` fans a stage
+// out N times (outputs concatenated for the next stage — best-of-N pattern).
+// The last stage's output is the system's response. See harness/orchestration.md.
+function renderTemplate(tpl, vars) {
+  return tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => {
+    if (vars[k] == null) fail(`pipeline template references unknown variable {{${k}}}`);
+    return vars[k];
+  });
+}
+
+async function runPipeline(cand, task) {
+  if (task.mode !== "single_turn") {
+    fail(`pipeline candidates support single_turn tasks only (${task.id} is ${task.mode})`);
+  }
+  const vars = { brief: candidateBrief(task) };
+  const usage = { input_tokens: 0, output_tokens: 0, tool_calls: 0 };
+  const stageRecords = [];
+  let cost = 0;
+  let lastText = "";
+  for (const stage of cand.stages) {
+    const provider = providers[stage.provider];
+    if (!provider) fail(`no adapter for provider "${stage.provider}" (stage ${stage.name})`);
+    const prompt = renderTemplate(stage.prompt ?? "{{brief}}", vars);
+    const n = stage.samples ?? 1;
+    const texts = [];
+    for (let i = 0; i < n; i++) {
+      const t0 = Date.now();
+      const out = await provider.generate({
+        model: stage.model,
+        system: stage.system,
+        messages: [{ role: "user", content: prompt }],
+        params: stage.params,
+        candidate: stage,
+      });
+      texts.push(out.text);
+      addUsage(usage, out.usage);
+      cost += costUsd(stage, out.usage) ?? 0;
+      stageRecords.push({
+        stage: stage.name,
+        sample: n > 1 ? i + 1 : undefined,
+        provider: stage.provider,
+        model: stage.model,
+        privacy: stage.privacy ?? "cloud",
+        usage: out.usage,
+        latency_ms: Date.now() - t0,
+      });
+    }
+    lastText =
+      n === 1
+        ? texts[0]
+        : texts.map((t, i) => `### Candidate ${i + 1}\n${t}`).join("\n\n");
+    vars[stage.name] = lastText;
+  }
+  return {
+    response: lastText,
+    transcript: null,
+    trace: stageRecords,
+    usage,
+    pipeline_cost: +cost.toFixed(4),
+  };
 }
 
 // ------------------------------------------------------- artifact handling
@@ -291,7 +398,7 @@ function extractHtml(text) {
   return i >= 0 ? text.slice(i) : null;
 }
 
-function saveArtifact(record, task, outDir) {
+function saveHtmlArtifact(record, task, outDir) {
   if (task.deliverable_type !== "html" || !record.response) return;
   const html = extractHtml(record.response);
   if (!html) {
@@ -304,6 +411,29 @@ function saveArtifact(record, task, outDir) {
   const file = path.join(dir, `${record.response_id}.html`);
   fs.writeFileSync(file, html);
   record.artifact_path = path.relative(ROOT, file);
+}
+
+// v2 path: agentic scaffolds with code execution produce real files (xlsx/docx/
+// pptx) server-side; download them via the Files API and store under artifacts/.
+async function persistGeneratedFiles(record, task, outDir) {
+  if (!record.output_file_ids?.length) return;
+  const client = anthropicClient();
+  const dir = path.join(outDir, "artifacts");
+  fs.mkdirSync(dir, { recursive: true });
+  record.artifact_files = [];
+  for (const fileId of record.output_file_ids) {
+    try {
+      const meta = await client.beta.files.retrieveMetadata(fileId);
+      const resp = await client.beta.files.download(fileId);
+      const name = path.basename(meta.filename ?? fileId);
+      if (!name || name === "." || name === "..") continue;
+      const file = path.join(dir, `${record.response_id}__${name}`);
+      fs.writeFileSync(file, Buffer.from(await resp.arrayBuffer()));
+      record.artifact_files.push(path.relative(ROOT, file));
+    } catch (e) {
+      record.artifact_error = `file ${fileId}: ${String(e?.message ?? e)}`;
+    }
+  }
 }
 
 async function renderArtifact(record, outDir) {
@@ -329,6 +459,70 @@ async function renderArtifact(record, outDir) {
   } finally {
     await browser.close();
   }
+}
+
+// -------------------------------------------------------------------- audit
+
+// Mechanical structure audit for xlsx artifacts: the pinned script in
+// harness/audits/xlsx_audit.py runs inside the code-execution sandbox (openpyxl
+// is pre-installed) against the uploaded workbook. The model only locates the
+// file and runs the script verbatim — the checks themselves are fixed code.
+async function cmdAudit(ctx) {
+  const { wave, outDir } = ctx;
+  const responses = readJsonl(path.join(outDir, "responses.jsonl"));
+  const outFile = path.join(outDir, "audits.jsonl");
+  const done = new Set(readJsonl(outFile).map((a) => a.response_id));
+  const script = fs.readFileSync(
+    path.join(EVALS, "harness", "audits", "xlsx_audit.py"),
+    "utf8",
+  );
+  const client = anthropicClient();
+
+  for (const record of responses) {
+    if (done.has(record.response_id) || record.error) continue;
+    const xlsx = (record.artifact_files ?? []).find((f) => f.endsWith(".xlsx"));
+    if (!xlsx) continue;
+    process.stdout.write(`audit ${record.response_id} ... `);
+    try {
+      const uploaded = await client.beta.files.upload({
+        file: await toFile(fs.createReadStream(path.join(ROOT, xlsx)), path.basename(xlsx)),
+      });
+      const resp = await client.messages.create(
+        {
+          model: wave.judge.model,
+          max_tokens: 8000,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "container_upload", file_id: uploaded.id },
+                {
+                  type: "text",
+                  text: `Locate the uploaded .xlsx file in the container, save the following script as audit.py WITHOUT modification, run "python audit.py <path-to-xlsx>", and then output ONLY the JSON the script printed — nothing else.\n\n\`\`\`python\n${script}\n\`\`\``,
+                },
+              ],
+            },
+          ],
+          tools: [SERVER_TOOLS.code_execution],
+        },
+        { headers: { "anthropic-beta": "files-api-2025-04-14" } },
+      );
+      const text = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      const m = text.match(/\{[\s\S]*\}/);
+      const audit = m ? JSON.parse(m[0]) : null;
+      appendJsonl(outFile, {
+        response_id: record.response_id,
+        artifact: xlsx,
+        audit,
+        error: audit ? null : "no JSON in audit output",
+      });
+      console.log(audit ? `ok (${audit.n_formula_cells} formulas, ${audit.n_magic_numbers} magic numbers)` : "ERROR: unparseable");
+    } catch (e) {
+      appendJsonl(outFile, { response_id: record.response_id, artifact: xlsx, audit: null, error: String(e?.message ?? e) });
+      console.log(`ERROR: ${String(e?.message ?? e)}`);
+    }
+  }
+  console.log(`audits → ${outFile}`);
 }
 
 // -------------------------------------------------------------------- judge
@@ -391,12 +585,13 @@ function dimensionsFor(task, weights) {
   return Object.entries(w).filter(([, wt]) => wt > 0);
 }
 
-function buildJudgeUserMessage(task, record, weights) {
+function buildJudgeUserMessage(task, record, weights, audit) {
   const dims = dimensionsFor(task, weights)
     .map(([d, wt]) => `- ${d} (weight ${wt})`)
     .join("\n");
   const key = task.key ?? {};
-  const fmt = (arr, f) => (arr ?? []).map((x) => `- [${x.dimension}] ${x[f]}`).join("\n") || "(none)";
+  const fmt = (arr, f) =>
+    (arr ?? []).map((x) => `- [${x.dimension}] ${x[f]}`).join("\n") || "(none)";
   const response =
     record.transcript != null
       ? record.transcript.map((t) => `### ${t.role}\n${t.content}`).join("\n\n")
@@ -412,6 +607,9 @@ function buildJudgeUserMessage(task, record, weights) {
     `## Common failures (exhibiting one caps its dimension at 2)\n${fmt(key.common_failures, "failure")}`,
     key.objective ? `## Objective key\n${yaml.dump(key.objective)}` : "",
     key.judge_notes ? `## Judge notes\n${key.judge_notes}` : "",
+    audit
+      ? `\n# Mechanical audit of the produced workbook (fixed script, trusted)\n${JSON.stringify(audit, null, 1)}`
+      : "",
     `\n# Dimensions to score (anchors are in the rubric provided in your context)\n${dims}`,
     `\n# Candidate ${record.transcript ? "transcript" : "response"}\n${response}`,
     record.trace
@@ -453,6 +651,9 @@ function computeComposite(task, scoresByDim, weights, gatesFromJudge) {
 async function cmdJudge(ctx) {
   const { wave, tasks, weights, outDir } = ctx;
   const responses = readJsonl(path.join(outDir, "responses.jsonl"));
+  const audits = Object.fromEntries(
+    readJsonl(path.join(outDir, "audits.jsonl")).map((a) => [a.response_id, a.audit]),
+  );
   const outFile = path.join(outDir, "scores.jsonl");
   const done = new Set(readJsonl(outFile).map((s) => s.response_id));
   const taskById = Object.fromEntries(tasks.map((t) => [t.id, t]));
@@ -480,7 +681,7 @@ async function cmdJudge(ctx) {
       }
     }
     const userText =
-      buildJudgeUserMessage(task, record, weights) +
+      buildJudgeUserMessage(task, record, weights, audits[record.response_id]) +
       (renderError
         ? `\n\nWARNING: artifact rendering failed (${renderError}). Score content dimensions from the source; if you score visual_design from markup alone, set confidence to "low".`
         : "");
@@ -590,51 +791,69 @@ function spearman(xs, ys) {
   return dx && dy ? +(num / Math.sqrt(dx * dy)).toFixed(3) : null;
 }
 
-const PROFILES = {
-  Structurer: ["A", "E", "I"],
-  Analyst: ["B", "C", "H"],
-  Communicator: ["D", "F", "J"],
-  Researcher: ["G"],
-  Builder: ["K", "L", "M"],
-};
+function profilesFromRegistry(registry) {
+  const profiles = {};
+  for (const [cat, def] of Object.entries(registry.categories)) {
+    (profiles[def.profile] ??= []).push(cat);
+  }
+  return profiles;
+}
 
 function cmdReport(ctx) {
-  const { wave, outDir, weights } = ctx;
+  const { wave, outDir, weights, registry } = ctx;
   const scores = readJsonl(path.join(outDir, "scores.jsonl"));
   const human = readJsonl(path.join(outDir, "human-scores.jsonl"));
   const responses = readJsonl(path.join(outDir, "responses.jsonl"));
   if (!scores.length) fail("no scores.jsonl — run `judge` first");
 
-  // Human scores supersede judge scores where present (bias-controls.md §10).
+  // Human scores supersede judge scores where present (bias-controls.md §11).
   const humanById = Object.fromEntries(human.map((h) => [h.response_id, h]));
   const effective = scores.map((s) => {
     const h = humanById[s.response_id];
     return h ? { ...s, scores: h.scores, source: "human" } : { ...s, source: "judge" };
   });
 
-  const models = [...new Set(effective.map((s) => s.model))];
+  const systems = [...new Set(effective.map((s) => s.model))];
   const cats = [...new Set(effective.map((s) => s.category))].sort();
   const cell = {};
   for (const s of effective) {
     (cell[`${s.model}|${s.category}`] ??= []).push(s.composite_after_gates);
   }
-  const avg = (a) => (a?.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(2) : null);
+  const avg = (a) =>
+    a?.length ? +(a.reduce((x, y) => x + y, 0) / a.length).toFixed(2) : null;
 
   const hp = weights.human_primary_dimensions ?? [];
   let md = `# Scorecard — ${wave.wave}\n\nJudge: ${wave.judge.model} (prompt v${wave.pins.judge_prompt_version}, rubric v${wave.pins.rubric_version}). Human scores supersede judge scores where present.${hp.length ? ` Judge scores on human-primary dimensions (${hp.join(", ")}) are provisional pending graduation (human-review/protocol.md).` : ""}\n\n`;
-  md += `## Composite by category\n\n| Model | ${cats.join(" | ")} |\n|---|${cats.map(() => "---").join("|")}|\n`;
-  for (const m of models) {
+
+  // Systems comparison: the headline table for routing and cost/quality trades.
+  const respBySystem = {};
+  for (const r of responses) (respBySystem[r.model] ??= []).push(r);
+  md += `## Systems comparison\n\n| System | Kind | Privacy | Composite (all) | Cost/run | Latency | Composite/$ |\n|---|---|---|---|---|---|---|\n`;
+  for (const m of systems) {
+    const comps = effective.filter((s) => s.model === m).map((s) => s.composite_after_gates);
+    const rs = respBySystem[m] ?? [];
+    const costs = rs.filter((r) => r.cost_usd != null).map((r) => r.cost_usd);
+    const lats = rs.filter((r) => r.latency_ms != null).map((r) => r.latency_ms);
+    const kind = rs[0]?.system_kind ?? "model";
+    const privacy = rs[0]?.privacy ?? "—";
+    const c = avg(comps);
+    const cost = costs.length ? avg(costs) : null;
+    md += `| ${m} | ${kind} | ${privacy} | ${c ?? "—"} | ${cost != null ? "$" + cost : "—"} | ${lats.length ? (avg(lats) / 1000).toFixed(1) + "s" : "—"} | ${c != null && cost ? (c / cost).toFixed(1) : "—"} |\n`;
+  }
+
+  md += `\n## Composite by category\n\n| System | ${cats.join(" | ")} |\n|---|${cats.map(() => "---").join("|")}|\n`;
+  for (const m of systems) {
     md += `| ${m} | ${cats.map((c) => avg(cell[`${m}|${c}`]) ?? "—").join(" | ")} |\n`;
   }
 
-  md += `\n## Capability profiles\n\n| Model | ${Object.keys(PROFILES).join(" | ")} | Cost/run (avg) |\n|---|${Object.keys(PROFILES).map(() => "---").join("|")}|---|\n`;
-  for (const m of models) {
+  const PROFILES = profilesFromRegistry(registry);
+  md += `\n## Capability profiles\n\n| System | ${Object.keys(PROFILES).join(" | ")} |\n|---|${Object.keys(PROFILES).map(() => "---").join("|")}|\n`;
+  for (const m of systems) {
     const prof = Object.values(PROFILES).map((catList) => {
       const vals = catList.flatMap((c) => cell[`${m}|${c}`] ?? []);
       return avg(vals) ?? "—";
     });
-    const costs = responses.filter((r) => r.model === m && r.cost_usd != null).map((r) => r.cost_usd);
-    md += `| ${m} | ${prof.join(" | ")} | ${costs.length ? "$" + avg(costs) : "—"} |\n`;
+    md += `| ${m} | ${prof.join(" | ")} |\n`;
   }
 
   // Judge–human agreement on the overlap.
@@ -649,7 +868,7 @@ function cmdReport(ctx) {
       if (pairs.length < 5) continue;
       const rho = spearman(pairs.map((p) => p[0]), pairs.map((p) => p[1]));
       const w1 = +(pairs.filter(([a, b]) => Math.abs(a - b) <= 1).length / pairs.length).toFixed(2);
-      md += `| ${d} | ${rho} ${rho != null && rho < 0.7 ? "⚠️" : ""} | ${w1} |\n`;
+      md += `| ${d}${hp.includes(d) ? " (human-primary)" : ""} | ${rho} ${rho != null && rho < 0.7 ? "⚠️" : ""} | ${w1} |\n`;
     }
   } else {
     md += `\n## Judge–human agreement\n\nInsufficient human-scored overlap (need ≥5, have ${overlap.length}). See human-review/protocol.md.\n`;
@@ -674,12 +893,18 @@ function fail(msg) {
 }
 
 const [, , cmd, ...rest] = process.argv;
-const waveArg = rest[rest.indexOf("--wave") + 1];
-if (!cmd || !["run", "judge", "report"].includes(cmd) || !waveArg) {
-  console.error("usage: runner.mjs <run|judge|report> --wave <wave.yml>");
+const waveIdx = rest.indexOf("--wave");
+const waveArg = waveIdx >= 0 ? rest[waveIdx + 1] : null;
+const COMMANDS = ["validate", "run", "audit", "judge", "report"];
+if (!cmd || !COMMANDS.includes(cmd) || (cmd !== "validate" && !waveArg)) {
+  console.error("usage: runner.mjs <validate|run|audit|judge|report> --wave <wave.yml>  (validate: --wave optional)");
   process.exit(1);
 }
-const ctx = loadWave(path.resolve(waveArg));
-Promise.resolve(({ run: cmdRun, judge: cmdJudge, report: cmdReport })[cmd](ctx)).catch((e) =>
-  fail(e.stack ?? e),
-);
+if (cmd === "validate") {
+  cmdValidate({ wavePath: waveArg ? path.resolve(waveArg) : null });
+} else {
+  const ctx = loadWave(path.resolve(waveArg));
+  Promise.resolve(
+    ({ run: cmdRun, audit: cmdAudit, judge: cmdJudge, report: cmdReport })[cmd](ctx),
+  ).catch((e) => fail(e.stack ?? e));
+}

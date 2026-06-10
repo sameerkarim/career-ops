@@ -24,25 +24,31 @@ longitudinal data on which models are best for which tasks.
 ```
 evals/
 ├── README.md                  ← this plan
-├── taxonomy.md                ← 10 task categories (A–J) and what each measures
+├── categories.yml             ← category registry (single source of truth; add use cases here)
+├── taxonomy.md                ← narrative companion: 13 categories (A–M) + how to add more
 ├── schema/
 │   └── task-spec.md           ← the task YAML contract + result record schema
 ├── tasks/                     ← the task bank (one YAML per task, versioned)
 │   ├── A-01-issue-tree.yml
 │   └── ...
 ├── rubrics/
-│   ├── core-dimensions.md     ← anchored 1–5 scales (6 core + 3 agentic dimensions)
+│   ├── core-dimensions.md     ← anchored 1–5 scales (6 core + 3 agentic + 2 artifact dims)
 │   └── weights.yml            ← per-category dimension weights → composite score
 ├── judges/
 │   ├── absolute-judge.md      ← rubric-scoring judge prompt template
 │   ├── pairwise-judge.md      ← A/B comparison judge prompt template
 │   └── bias-controls.md       ← mandatory mitigations (position swap, freezing, etc.)
 ├── human-review/
-│   ├── protocol.md            ← sampling, calibration, agreement metrics
+│   ├── protocol.md            ← sampling, calibration, agreement, human-primary dims
 │   └── review-form.md         ← the human scoring form (mirrors judge dimensions)
 ├── harness/
-│   ├── run-config.example.yml ← wave manifest: models, judge, tasks, modes
-│   └── runner.mjs             ← run / judge / report commands
+│   ├── run-config.example.yml ← wave manifest: systems, judge, tasks, scaffolds
+│   ├── runner.mjs             ← validate / run / audit / judge / report commands
+│   ├── providers.mjs          ← adapters: anthropic + openai-compatible (covers
+│   │                            OpenAI, Gemini, DeepSeek/Qwen/Kimi, Ollama/vLLM/local)
+│   ├── orchestration.md       ← pipelines, provider hooks, cost/quality/privacy trades
+│   └── audits/
+│       └── xlsx_audit.py      ← pinned mechanical workbook audit (runs in sandbox)
 └── results/                   ← JSONL per wave (gitignored raw, committed scorecards)
 ```
 
@@ -120,13 +126,31 @@ the pinned wave manifest, so you can compare *systems*, not just models.
   least half the categories; if everything scores 4.5+, the tasks are too easy — add
   harder variants (difficulty `expert`).
 
+## Comparing systems, not just models
+
+Candidates in a wave are **systems**: single models (any provider via
+`harness/providers.mjs` — Anthropic native, plus an `openai-compatible` adapter
+covering OpenAI, Gemini, the Chinese labs, and local Ollama/vLLM servers) or
+**orchestration pipelines** (`kind: pipeline` — staged workflows mixing local and
+frontier models). The scorecard's *Systems comparison* table puts composite quality,
+cost/run, latency, privacy tier, and composite-per-dollar side by side — the basis
+for "frontier solo vs. orchestrated local mix" decisions. Design guide, pattern
+library, and fairness rules: `harness/orchestration.md`.
+
 ## Roadmap (build order)
 
-1. ✅ v0: taxonomy, rubrics, judge prompts, human protocol, 10 seed tasks (1/category),
+1. ✅ v0: taxonomy, rubrics, judge prompts, human protocol, seed tasks,
    runner supporting Anthropic models end-to-end.
-2. v1: 3–5 tasks per category incl. `expert` difficulty; pairwise judging wired into
-   `report`; provider adapters for the other model families you care about.
-3. v2: agentic scaffold library (research agent, analyst+reviewer pair); cost/latency
-   frontier charts; per-client-engagement private task variants (keep client-derived
-   tasks out of git or anonymize — treat them like `data/*` in this repo's data
-   contract).
+2. ✅ v1 (partial): category registry + `validate` command (use cases are config,
+   not code); artifact categories K/L/M with vision judging and human-primary
+   dimensions; `openai-compatible` provider adapter; orchestration pipelines with
+   per-stage cost/privacy accounting; systems-comparison scorecard.
+   Remaining: 3–5 tasks per category incl. `expert`; pairwise judging wired into
+   `report`.
+3. ✅ v2 (partial): `artifact-builder` scaffold — real .xlsx/.docx/.pptx via
+   server-side code execution with automatic file collection — plus the pinned
+   mechanical workbook audit (`runner.mjs audit`, `harness/audits/xlsx_audit.py`)
+   feeding trusted structure evidence to the judge. Remaining: pptx/docx audits,
+   parallel/tool-using pipeline stages, router pipelines with real branching,
+   per-client private task variants (keep client-derived tasks out of git or
+   anonymize — treat them like `data/*` in this repo's data contract).
